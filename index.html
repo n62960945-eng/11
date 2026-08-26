@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ALLY SCOTT - PAIRING SUBNET</title>
+    <style>
+        body {
+            background-color: #0b0f19;
+            color: #00ffcc;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .card {
+            background: #111827;
+            border: 2px solid #00ffcc;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 0 20px rgba(0, 255, 204, 0.3);
+            text-align: center;
+            width: 320px;
+        }
+        h2 {
+            margin-bottom: 10px;
+            color: #fff;
+            font-size: 20px;
+        }
+        p {
+            font-size: 12px;
+            color: #9ca3af;
+            margin-bottom: 20px;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            background: #1f2937;
+            border: 1px solid #374151;
+            color: #fff;
+            border-radius: 6px;
+            box-sizing: border-box;
+            margin-bottom: 15px;
+            font-size: 14px;
+            text-align: center;
+        }
+        button {
+            width: 100%;
+            padding: 10px;
+            background: #00ffcc;
+            color: #0b0f19;
+            border: none;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 14px;
+            transition: 0.3s;
+        }
+        button:hover {
+            background: #00b391;
+        }
+        #result {
+            margin-top: 20px;
+            font-size: 18px;
+            font-weight: bold;
+            color: #f3f4f6;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h2>⚡ ALLY SCOTT VIP ⚡</h2>
+        <p>Multi-Device Pairing Portal</p>
+        
+        <input type="text" id="phone" placeholder="25562xxxxxxx" />
+        <button onclick="getPairingCode()">GET PAIRING CODE</button>
+        
+        <div id="result"></div>
+    </div>
+
+    <script>
+        async function getPairingCode() {
+            const phone = document.getElementById('phone').value.trim();
+            const resultDiv = document.getElementById('result');
+
+            if (!phone) {
+                resultDiv.innerHTML = "<span style='color: #ef4444;'>Please enter phone number!</span>";
+                return;
+            }
+
+            resultDiv.innerHTML = "Generating code...";
+
+            try {
+                const response = await fetch('/pair', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ number: phone })
+                });
+
+                const data = await response.json();
+
+                if (data.code) {
+                    if (data.code === "ALREADY_CONNECTED") {
+                        resultDiv.innerHTML = "<span style='color: #10b981;'>Already Connected!</span>";
+                    } else {
+                        resultDiv.innerHTML = `Your Code:<br><span style="color: #00ffcc; font-size: 22px; background: #1f2937; padding: 5px 10px; display:inline-block; margin-top:5px; border-radius:4px;">${data.code}</span>`;
+                    }
+                } else {
+                    resultDiv.innerHTML = "<span style='color: #ef4444;'>Failed to generate!</span>";
+                }
+            } catch (err) {
+                resultDiv.innerHTML = "<span style='color: #ef4444;'>Network Error!</span>";
+            }
+        }
+    </script>
+</body>
+</html>
