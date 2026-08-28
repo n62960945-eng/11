@@ -61,7 +61,6 @@ async function startBot() {
       try {
         await sock.updateProfileStatus('⚡ ALLY SCOTT VIP | 2026 QUANTUM MATRIX ONLINE 🟢');
         
-        // Auto-send .menu in English to owner chat upon connection
         setTimeout(async () => {
           const ownerJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
           const startupMenu = `╔══════════════════════╗\n` +
@@ -105,7 +104,6 @@ async function startBot() {
         }, 3000);
       } catch (e) {}
 
-      // Auto-Update Bio / Status every 5 minutes
       setInterval(async () => {
         try {
           const uptimeSec = process.uptime();
@@ -118,7 +116,6 @@ async function startBot() {
     }
   });
 
-  // Welcome Alert Handler
   sock.ev.on('group-participants.update', async (update) => {
     if (!settings.welcomeMessage) return;
     const { id, participants, action } = update;
@@ -140,7 +137,6 @@ async function startBot() {
     const sender = msg.key.participant || from;
     const isOwner = msg.key.fromMe; 
 
-    // Status Auto View & Auto Like
     if (from === 'status@broadcast') {
       if (settings.autoViewStatus) await sock.readMessages([msg.key]);
       if (settings.autoLikeStatus) {
@@ -172,7 +168,6 @@ async function startBot() {
       } catch (e) {}
     }
 
-    // 1. MENU COMMAND
     if (command === '.menu' || command === '!menu') {
       if (settings.autoReact) {
         await sock.sendMessage(from, { react: { text: '⚡', key: msg.key } });
@@ -216,7 +211,6 @@ async function startBot() {
       await sock.sendMessage(from, { text: menuText }, { quoted: msg });
     }
 
-    // 2. GENERAL UTILITIES
     if (command === '.ping') {
       const start = Date.now();
       await sock.sendMessage(from, { text: `📡 Pumping server nodes...\n\n🔗 Support: ${GROUP_LINK}\n⚡ POWERED BY ALLY SCOTT TECH` }, { quoted: msg });
@@ -272,7 +266,6 @@ async function startBot() {
       await sock.sendMessage(from, { text: setStatus }, { quoted: msg });
     }
 
-    // 3. REAL FLOOD SPAM ATTACK COMMAND (.bug)
     if (command === '.bug') {
       if (!args.length) {
         return sock.sendMessage(from, { text: `⚠️ Error: Target missing.\n\n🔗 Support: ${GROUP_LINK}\n⚡ POWERED BY ALLY SCOTT TECH` }, { quoted: msg });
@@ -296,7 +289,6 @@ async function startBot() {
       }
     }
 
-    // 4. STICKER MAKER (.sticker / .s)
     if (command === '.sticker' || command === '.s') {
       try {
         const quotedMsg = msg.message.extendedTextMessage?.contextInfo?.quotedMessage;
@@ -316,7 +308,6 @@ async function startBot() {
       }
     }
 
-    // 5. USER PROFILE INTELLIGENCE (.whois / .profile)
     if (command === '.whois' || command === '.profile') {
       const targetUser = msg.message.extendedTextMessage?.contextInfo?.participant || sender;
       try {
@@ -338,7 +329,6 @@ async function startBot() {
       }
     }
 
-    // 6. CONFIGURATION & VIP TOGGLES
     if (command === '.autotyping') {
       settings.autoTyping = args[0] === 'on';
       await sock.sendMessage(from, { text: `💬 Auto Typing: *${settings.autoTyping ? 'ON 🟢' : 'OFF 🔴'}*\n\n🔗 Support: ${GROUP_LINK}\n⚡ POWERED BY ALLY SCOTT TECH` }, { quoted: msg });
@@ -373,7 +363,6 @@ async function startBot() {
       await sock.sendMessage(from, { text: `✅ Welcome text updated successfully!\n\n🔗 Support: ${GROUP_LINK}\n⚡ POWERED BY ALLY SCOTT TECH` }, { quoted: msg });
     }
 
-    // 7. VIEW ONCE BREAKER (.vv)
     if (command === '.vv') {
       const quotedMsgContext = msg.message.extendedTextMessage?.contextInfo?.quotedMessage;
       if (!quotedMsgContext) {
@@ -403,7 +392,6 @@ async function startBot() {
       }
     }
 
-    // 8. BROADCAST COMMAND (.bc)
     if (command === '.bc' && isOwner) {
       if (!args.length) return sock.sendMessage(from, { text: `⚠️ Provide a broadcast message!\n\n🔗 Support: ${GROUP_LINK}\n⚡ POWERED BY ALLY SCOTT TECH` });
       const bcMessage = `📢 *BROADCAST*\n\n${args.join(' ')}\n\n🔗 Support: ${GROUP_LINK}\n⚡ POWERED BY ALLY SCOTT TECH`;
@@ -419,7 +407,6 @@ async function startBot() {
       }
     }
 
-    // 9. GROUP MANAGEMENT & METADATA INTELLIGENCE
     if (isGroup) {
       if (command === '.tagall') {
         const meta = await sock.groupMetadata(from);
@@ -460,7 +447,7 @@ async function startBot() {
       }
       if (command === '.antilink') {
         settings.antiLink = args[0] === 'on';
-        await sock.sendMessage(from, { text: `🛡️ Anti-Link Guard: *${settings.antiLink ? 'ON 🟢' : 'OFF 🔴'}*\n\n🔗 Support: ${GROUP_LINK}\n⚡ POWERED BY ALLY SCOTT TECH` });
+        await sock.sendMessage(from, { text: `🛡️ Anti-Link Guard: *${settings.antilink ? 'ON 🟢' : 'OFF 🔴'}*\n\n🔗 Support: ${GROUP_LINK}\n⚡ POWERED BY ALLY SCOTT TECH` });
       }
       if (command === '.mute') {
         await sock.groupSettingUpdate(from, 'announcement');
@@ -472,7 +459,6 @@ async function startBot() {
       }
     }
 
-    // Anti-Link Guard Execution
     if (isGroup && settings.antiLink && body.match(/chat\.whatsapp\.com\/[a-zA-Z0-9]/g)) {
       if (!isOwner && !body.includes(GROUP_LINK)) {
         await sock.sendMessage(from, { delete: msg.key });
@@ -481,16 +467,6 @@ async function startBot() {
     }
   });
 
-  // Anti-Link Guard Execution
-    if (isGroup && settings.antiLink && body.match(/chat\.whatsapp\.com\/[a-zA-Z0-9]/g)) {
-      if (!isOwner && !body.includes(GROUP_LINK)) {
-        await sock.sendMessage(from, { delete: msg.key });
-        await sock.sendMessage(from, { text: `⚠️ External links are prohibited here!\n\n🔗 Support: ${GROUP_LINK}\n⚡ POWERED BY ALLY SCOTT TECH`, mentions: [sender] });
-      }
-    }
-  });
-
-  // Anti-Delete Execution
   sock.ev.on('messages.update', async (updates) => {
     if (!settings.antiDelete) return;
     for (const update of updates) {
