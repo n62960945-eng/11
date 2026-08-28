@@ -1,24 +1,15 @@
 {
   "name": "ally-scott-vip-engine",
-  "version": "3.5.0",
-  "description": "WhatsApp Multi-Device Automation Bot Powered by Ally Scott Tech",
+  "version": "9.0.0",
+  "description": "Elite WhatsApp Automation Bot by Ally Scott Tech",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
-  "keywords": [
-    "whatsapp-bot",
-    "baileys",
-    "ally-scott",
-    "automation"
-  ],
-  "author": "Ally Scott Tech",
-  "license": "ISC",
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.7",
-    "axios": "^1.7.2",
+    "@whiskeysockets/baileys": "^6.7.0",
+    "axios": "^1.6.8",
     "express": "^4.19.2",
-    "pino": "^9.1.0",
-    "yt-search": "^2.11.1"
+    "pino": "^9.0.0"
   }
 }
