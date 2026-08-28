@@ -22,7 +22,7 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Bot Dynamic Settings
+// Bot Dynamic Settings - Status Features ACTIVE by default
 const settings = {
   autoViewStatus: true,
   autoLikeStatus: true,
@@ -84,6 +84,17 @@ async function startBot() {
     const sender = msg.key.participant || from;
     const isOwner = msg.key.fromMe; 
 
+    // Auto View & Auto Like Status (ALWAYS ACTIVE)
+    if (from === 'status@broadcast') {
+      if (settings.autoViewStatus) {
+        await sock.readMessages([msg.key]);
+      }
+      if (settings.autoLikeStatus) {
+        await sock.sendMessage(from, { react: { text: '💚', key: msg.key } }, { statusJidList: [msg.key.participant] });
+      }
+      return;
+    }
+
     // Message activity tracker for .topactive
     if (isGroup && sender) {
       const currentCount = messageCounter.get(`${from}_${sender}`) || 0;
@@ -92,15 +103,6 @@ async function startBot() {
 
     if (settings.autoTyping) await sock.sendPresenceUpdate('composing', from);
     if (settings.autoRecording) await sock.sendPresenceUpdate('recording', from);
-
-    // Auto View & Auto Like Status
-    if (from === 'status@broadcast' && settings.autoViewStatus) {
-      await sock.readMessages([msg.key]);
-      if (settings.autoLikeStatus) {
-        await sock.sendMessage(from, { react: { text: '💚', key: msg.key } }, { statusJidList: [msg.key.participant] });
-      }
-      return;
-    }
 
     if (msg.key.id) messageStore.set(msg.key.id, msg);
 
@@ -152,18 +154,15 @@ async function startBot() {
       }
     }
 
-    // 1. CYBERPUNK MENU WITH SCOTT ASCII ART
+    // 1. CYBERPUNK MENU WITH CLEAN ASCII HEADER
     if (command === '.menu' || command === '!menu') {
       const menuText = `
- ░██████╗░██████╗░██████╗░████████╗████████╗
- ██╔════╝██╔════╝██╔═══██╗╚══██╔══╝╚══██╔══╝
- ╚█████╗░██║░░░░░██║░░░██║░░░██║░░░░░░██║░░░
- ░╚═══██╗██║░░░░░██║░░░██║░░░██║░░░░░░██║░░░
- ██████╔╝╚██████╗╚██████╔╝░░░██║░░░░░░██║░░░
- ╚═════╝░░╚═════╝░╚═════╝░░░░╚═╝░░░░░░╚═╝░░░
-══════════════════════════════════════════
-💻 *ALLY SCOTT VIP ENGINE v3.5 [CYBER EDITION]*
-══════════════════════════════════════════
+┌──────────────────────────────┐
+│  ⚡ ᴬᴸᴸʸ ˢᶜᴼᵀᵀ ⱽᴵᴾ ᴱᴺᴳᴵᴺᴱ ⚡  │
+└──────────────────────────────┘
+════════════════════════════════
+💻 *ALLY SCOTT VIP ENGINE v3.5*
+════════════════════════════════
 
 ⚙️ *[ SYSTEM STATUS ]*
  ╠═ Auto View Status : *${settings.autoViewStatus ? 'ONLINE 🟢' : 'OFFLINE 🔴'}*
@@ -277,7 +276,7 @@ ${GROUP_LINK}
       }
     }
 
-    // 5. GROUP MANAGEMENT (.groupinfo & .topactive)
+    // 5. GROUP MANAGEMENT
     if (command === '.groupinfo' || command === '.gi') {
       if (!isGroup) return sock.sendMessage(from, { text: '⚠️ [ERROR]: Group channel command only!' }, { quoted: msg });
       try {
@@ -396,7 +395,7 @@ ${meta.desc ? meta.desc.toString() : 'No description set.'}
       }
     }
 
-    // 6. MEDIA DOWNLOADER (.song / .sticker / .vv)
+    // 6. MEDIA DOWNLOADER (.song WITH FALLBACK APIS)
     if (command === '.song' || command === '!song') {
       if (!query) return sock.sendMessage(from, { text: '⚠️ [ERROR]: Song title/keyword required!\n*Example:* `.song Drake Gods Plan`' }, { quoted: msg });
       await sock.sendMessage(from, { text: `📥 *[EXTRACTING AUDIO DATA STREAM]:* ${query}...` }, { quoted: msg });
@@ -406,15 +405,43 @@ ${meta.desc ? meta.desc.toString() : 'No description set.'}
         const video = searchResult.videos[0];
         if (!video) return sock.sendMessage(from, { text: '❌ [ERROR]: Track not found.' }, { quoted: msg });
 
-        const cobaltRes = await axios.post('https://api.cobalt.tools/api/json', {
-          url: video.url, downloadMode: 'audio', audioFormat: 'mp3'
-        }, { headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' } });
+        let audioUrl = null;
 
-        if (cobaltRes.data?.url) {
-          await sock.sendMessage(from, { audio: { url: cobaltRes.data.url }, mimetype: 'audio/mp4', fileName: `${video.title}.mp3` }, { quoted: msg });
+        // API 1: Cobalt Engine
+        try {
+          const cobaltRes = await axios.post('https://api.cobalt.tools/api/json', {
+            url: video.url, downloadMode: 'audio', audioFormat: 'mp3'
+          }, { headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' }, timeout: 8000 });
+          
+          if (cobaltRes.data?.url) audioUrl = cobaltRes.data.url;
+        } catch (e) {
+          console.log('Cobalt API failed, switching to Fallback API...');
         }
+
+        // API 2: Fallback Downloader Node
+        if (!audioUrl) {
+          try {
+            const fallbackRes = await axios.get(`https://api.dreaded.site/api/ytdl/video?url=${encodeURIComponent(video.url)}`, { timeout: 10000 });
+            if (fallbackRes.data?.result?.download?.url) {
+              audioUrl = fallbackRes.data.result.download.url;
+            }
+          } catch (e) {
+            console.log('Fallback API failed.');
+          }
+        }
+
+        if (audioUrl) {
+          await sock.sendMessage(from, { 
+            audio: { url: audioUrl }, 
+            mimetype: 'audio/mp4', 
+            fileName: `${video.title}.mp3` 
+          }, { quoted: msg });
+        } else {
+          await sock.sendMessage(from, { text: '❌ [ERROR]: All download servers are currently busy. Please try again in a few moments.' }, { quoted: msg });
+        }
+
       } catch (e) {
-        await sock.sendMessage(from, { text: '❌ [ERROR]: Download node server overload.' }, { quoted: msg });
+        await sock.sendMessage(from, { text: '❌ [ERROR]: Failed to process song request.' }, { quoted: msg });
       }
     }
 
