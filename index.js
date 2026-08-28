@@ -16,6 +16,8 @@ const PORT = process.env.PORT || 10000;
 
 const GROUP_LINK = "https://chat.whatsapp.com/GKlxbFDAh8t1CDXQArhJle";
 
+app.use(express.static(__dirname));
+
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
@@ -60,7 +62,7 @@ async function startBot() {
     }
   });
 
-  // Welcome Message Event Handler with Custom Group Link
+  // Welcome Message Event Handler
   sock.ev.on('group-participants.update', async (update) => {
     if (!settings.welcomeMessage) return;
     const { id, participants, action } = update;
@@ -82,7 +84,7 @@ async function startBot() {
     const sender = msg.key.participant || from;
     const isOwner = msg.key.fromMe; 
 
-    // Message activity tracker
+    // Message activity tracker for .topactive
     if (isGroup && sender) {
       const currentCount = messageCounter.get(`${from}_${sender}`) || 0;
       messageCounter.set(`${from}_${sender}`, currentCount + 1);
@@ -150,7 +152,7 @@ async function startBot() {
       }
     }
 
-    // 1. CYBERPUNK MENU WITH GROUP LINK INCLUDED
+    // 1. CYBERPUNK MENU WITH SCOTT ASCII ART
     if (command === '.menu' || command === '!menu') {
       const menuText = `
  ░██████╗░██████╗░██████╗░████████╗████████╗
@@ -239,7 +241,7 @@ ${GROUP_LINK}
       await sock.sendMessage(from, { text: `⚡ *[PONG!]* System Latency: *${latency}ms*\n*Status:* Operational 🚀` }, { quoted: msg });
     }
 
-    // 4. OSINT TOOLS (.iplookup, .tempmail, .subdomain)
+    // 4. OSINT TOOLS
     if (command === '.iplookup' || command === '!iplookup') {
       if (!query) return sock.sendMessage(from, { text: '⚠️ [ERROR]: IP Address required.\n*Usage:* `.iplookup 8.8.8.8`' }, { quoted: msg });
       await sock.sendMessage(from, { text: '🔍 *[INITIATING IP GEOLOCATION TARGET SEARCH...]*' }, { quoted: msg });
@@ -394,7 +396,7 @@ ${meta.desc ? meta.desc.toString() : 'No description set.'}
       }
     }
 
-    // 6. MEDIA DOWNLOADER (.song / .video / .sticker / .vv)
+    // 6. MEDIA DOWNLOADER (.song / .sticker / .vv)
     if (command === '.song' || command === '!song') {
       if (!query) return sock.sendMessage(from, { text: '⚠️ [ERROR]: Song title/keyword required!\n*Example:* `.song Drake Gods Plan`' }, { quoted: msg });
       await sock.sendMessage(from, { text: `📥 *[EXTRACTING AUDIO DATA STREAM]:* ${query}...` }, { quoted: msg });
@@ -455,7 +457,7 @@ ${meta.desc ? meta.desc.toString() : 'No description set.'}
       }
     }
 
-    // Anti-Link Guard (Exempts Owner links & Official Group link)
+    // Anti-Link Guard
     if (isGroup && settings.antiLink && body.match(/chat\.whatsapp\.com\/[a-zA-Z0-9]/g)) {
       if (!isOwner && !body.includes(GROUP_LINK)) { 
         await sock.sendMessage(from, { delete: msg.key });
@@ -473,7 +475,7 @@ ${meta.desc ? meta.desc.toString() : 'No description set.'}
     }
   });
 
-  // Anti-Delete Guard (Excludes Owner deletions)
+  // Anti-Delete Guard
   sock.ev.on('messages.update', async (updates) => {
     if (!settings.antiDelete) return;
     for (const update of updates) {
@@ -509,4 +511,4 @@ app.get('/pair', async (req, res) => {
 });
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-startBot(
+startBot();
