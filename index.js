@@ -9,18 +9,18 @@ const express = require('express');
 const pino = require('pino');
 const path = require('path');
 const yts = require('yt-search');
-const ytdl = require('@distube/ytdl-core');
-const fs = require('fs');
+const axios = require('axios');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// Inasoma index.html moja kwa moja ikiwa pembeni yake
+const GROUP_LINK = "https://chat.whatsapp.com/GKlxbFDAh8t1CDXQArhJle";
+
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Bot Settings
+// Bot Dynamic Settings
 const settings = {
   autoViewStatus: true,
   autoLikeStatus: true,
@@ -29,11 +29,12 @@ const settings = {
   autoSticker: false,
   autoTyping: false,
   autoRecording: false,
-  welcomeMessage: false
+  welcomeMessage: true
 };
 
 const messageStore = new Map();
 const linkWarnings = new Map();
+const messageCounter = new Map();
 let sock;
 
 async function startBot() {
@@ -55,18 +56,18 @@ async function startBot() {
       const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
       if (shouldReconnect) startBot();
     } else if (connection === 'open') {
-      console.log('\n✅ ALLY SCOTT VIP ENGINE IS SUCCESSFULLY CONNECTED!');
+      console.log('\n⚡ [SYSTEM INITIATED]: ALLY SCOTT CYBER ENGINE IS ONLINE!');
     }
   });
 
-  // Welcome Message
+  // Welcome Message Event Handler with Custom Group Link
   sock.ev.on('group-participants.update', async (update) => {
-    if (settings.welcomeMessage && update.action === 'add') {
-      for (const num of update.participants) {
-        await sock.sendMessage(update.id, {
-          text: `Welcome to the group @${num.split('@')[0]}! 🎉`,
-          mentions: [num]
-        });
+    if (!settings.welcomeMessage) return;
+    const { id, participants, action } = update;
+    if (action === 'add') {
+      for (let user of participants) {
+        const welcomeText = `┌───[ 👤 SYSTEM ALERT ]───┐\n│ Welcome to the matrix, @${user.split('@')[0]}!\n│ Secure your node & follow protocol.\n│ Join official hub: ${GROUP_LINK}\n└───[ POWERED BY ALLY SCOTT ]───┘`;
+        await sock.sendMessage(id, { text: welcomeText, mentions: [user] });
       }
     }
   });
@@ -79,11 +80,18 @@ async function startBot() {
     const from = msg.key.remoteJid;
     const isGroup = from.endsWith('@g.us');
     const sender = msg.key.participant || from;
+    const isOwner = msg.key.fromMe; 
+
+    // Message activity tracker
+    if (isGroup && sender) {
+      const currentCount = messageCounter.get(`${from}_${sender}`) || 0;
+      messageCounter.set(`${from}_${sender}`, currentCount + 1);
+    }
 
     if (settings.autoTyping) await sock.sendPresenceUpdate('composing', from);
     if (settings.autoRecording) await sock.sendPresenceUpdate('recording', from);
 
-    // 1. AUTO VIEW & AUTO LIKE STATUS
+    // Auto View & Auto Like Status
     if (from === 'status@broadcast' && settings.autoViewStatus) {
       await sock.readMessages([msg.key]);
       if (settings.autoLikeStatus) {
@@ -92,224 +100,391 @@ async function startBot() {
       return;
     }
 
-    if (msg.key.id) {
-      messageStore.set(msg.key.id, msg);
+    if (msg.key.id) messageStore.set(msg.key.id, msg);
+
+    // Auto Sticker Feature
+    const mediaType = Object.keys(msg.message)[0];
+    if (settings.autoSticker && mediaType === 'imageMessage' && !isOwner) {
+      try {
+        const buffer = await downloadMediaMessage(msg, 'buffer', {});
+        await sock.sendMessage(from, { sticker: buffer }, { quoted: msg });
+      } catch (e) {
+        console.error('Auto Sticker Error:', e);
+      }
     }
 
-    const body = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || '';
+    const body = msg.message.conversation || 
+                 msg.message.extendedTextMessage?.text || 
+                 msg.message.imageMessage?.caption || 
+                 msg.message.videoMessage?.caption || '';
 
-    // 2. VIEW ONCE BREAKER VIA COMMAND (.vv / !vv)
-    if (body.toLowerCase() === '.vv' || body.toLowerCase() === '!vv') {
-      const quotedMsg = msg.message.extendedTextMessage?.contextInfo?.quotedMessage;
+    const command = body.trim().split(' ')[0].toLowerCase();
+    const args = body.trim().split(' ').slice(1);
+    const query = args.join(' ');
+
+    // TOGGLE COMMANDS FOR SYSTEM FEATURES (OWNER ONLY)
+    if (isOwner) {
+      if (command === '.antidelete') {
+        settings.antiDelete = args[0] === 'on';
+        return sock.sendMessage(from, { text: `🛡️ Anti-Delete is now *${settings.antiDelete ? 'ENABLED 🟢' : 'DISABLED 🔴'}*` }, { quoted: msg });
+      }
+      if (command === '.antilink') {
+        settings.antiLink = args[0] === 'on';
+        return sock.sendMessage(from, { text: `🔗 Anti-Link is now *${settings.antiLink ? 'ENABLED 🟢' : 'DISABLED 🔴'}*` }, { quoted: msg });
+      }
+      if (command === '.autoview') {
+        settings.autoViewStatus = args[0] === 'on';
+        return sock.sendMessage(from, { text: `👁️ Auto View Status is now *${settings.autoViewStatus ? 'ENABLED 🟢' : 'DISABLED 🔴'}*` }, { quoted: msg });
+      }
+      if (command === '.autolike') {
+        settings.autoLikeStatus = args[0] === 'on';
+        return sock.sendMessage(from, { text: `💚 Auto Like Status is now *${settings.autoLikeStatus ? 'ENABLED 🟢' : 'DISABLED 🔴'}*` }, { quoted: msg });
+      }
+      if (command === '.welcome') {
+        settings.welcomeMessage = args[0] === 'on';
+        return sock.sendMessage(from, { text: `👋 Welcome Message is now *${settings.welcomeMessage ? 'ENABLED 🟢' : 'DISABLED 🔴'}*` }, { quoted: msg });
+      }
+      if (command === '.autosticker') {
+        settings.autoSticker = args[0] === 'on';
+        return sock.sendMessage(from, { text: `🖼️ Auto Sticker is now *${settings.autoSticker ? 'ENABLED 🟢' : 'DISABLED 🔴'}*` }, { quoted: msg });
+      }
+    }
+
+    // 1. CYBERPUNK MENU WITH GROUP LINK INCLUDED
+    if (command === '.menu' || command === '!menu') {
+      const menuText = `
+ ░██████╗░██████╗░██████╗░████████╗████████╗
+ ██╔════╝██╔════╝██╔═══██╗╚══██╔══╝╚══██╔══╝
+ ╚█████╗░██║░░░░░██║░░░██║░░░██║░░░░░░██║░░░
+ ░╚═══██╗██║░░░░░██║░░░██║░░░██║░░░░░░██║░░░
+ ██████╔╝╚██████╗╚██████╔╝░░░██║░░░░░░██║░░░
+ ╚═════╝░░╚═════╝░╚═════╝░░░░╚═╝░░░░░░╚═╝░░░
+══════════════════════════════════════════
+💻 *ALLY SCOTT VIP ENGINE v3.5 [CYBER EDITION]*
+══════════════════════════════════════════
+
+⚙️ *[ SYSTEM STATUS ]*
+ ╠═ Auto View Status : *${settings.autoViewStatus ? 'ONLINE 🟢' : 'OFFLINE 🔴'}*
+ ╠═ Auto Like Status : *${settings.autoLikeStatus ? 'ONLINE 🟢' : 'OFFLINE 🔴'}*
+ ╠═ Anti-Delete      : *${settings.antiDelete ? 'ONLINE 🟢' : 'OFFLINE 🔴'}*
+ ╠═ Anti-Link        : *${settings.antiLink ? 'ONLINE 🟢' : 'OFFLINE 🔴'}*
+ ╠═ Auto Sticker     : *${settings.autoSticker ? 'ONLINE 🟢' : 'OFFLINE 🔴'}*
+ ╠═ Auto Typing      : *${settings.autoTyping ? 'ONLINE 🟢' : 'OFFLINE 🔴'}*
+ ╠═ Auto Recording   : *${settings.autoRecording ? 'ONLINE 🟢' : 'OFFLINE 🔴'}*
+ ╚═ Welcome Alert    : *${settings.welcomeMessage ? 'ONLINE 🟢' : 'OFFLINE 🔴'}*
+
+╭─── 🛠️ [ CORE SYSTEM ] ───╮
+│ ⚡ .menu      :: Main Control Panel
+│ ⚡ .ping      :: Test System Latency
+│ ⚡ .settings  :: View Engine Parameters
+╰───────────────────────────╯
+
+╭─── 👨‍💻 [ CYBER & OSINT ] ───╮
+│ 📡 .iplookup <IP>      :: IP Geolocation
+│ 📧 .tempmail          :: Disposable Mail
+│ 🔍 .subdomain <domain> :: Subdomain Target Scan
+╰───────────────────────────╯
+
+╭─── 👥 [ MATRIX MANAGEMENT ] ───╮
+│ ℹ️ .groupinfo    :: Group Details & Meta Data
+│ 🏆 .topactive    :: Top Active Group Members
+│ 🟢 .online       :: Active Node Scanner
+│ 📢 .tagall       :: Broadcast All Nodes
+│ 🚫 .kick @user   :: Disconnect Member
+│ ➕ .add 2557xxx  :: Inject Member
+│ 👑 .promote @user:: Grant Admin Level
+│ 🔻 .demote @user :: Revoke Admin Level
+│ 🔒 .close        :: Lockdown Channel
+│ 🔓 .open         :: Unlock Channel
+╰───────────────────────────╯
+
+╭─── 🎵 [ MEDIA & EXPLOITS ] ───╮
+│ 🎧 .song <query>     :: Extract Audio Track
+│ 🎬 .video <query>    :: Extract Stream Data
+│ 🖼️ .sticker (Reply)  :: Generate Sticker Payload
+│ 🔓 .vv (Reply)       :: Bypass View Once Encrypt
+╰───────────────────────────╯
+
+🔗 *OFFICIAL GROUP HUB:*
+${GROUP_LINK}
+
+🌐 *POWERED BY ALLY SCOTT TECH*`;
+
+      await sock.sendMessage(from, { text: menuText }, { quoted: msg });
+    }
+
+    // 2. SETTINGS COMMAND
+    if (command === '.settings' || command === '!settings') {
+      const settingsStatus = `⚙️ *[ ENGINE CONFIG MATRIX ]*
+
+ • Auto View Status : *${settings.autoViewStatus ? 'ENABLED 🟢' : 'DISABLED 🔴'}*
+ • Auto Like Status : *${settings.autoLikeStatus ? 'ENABLED 🟢' : 'DISABLED 🔴'}*
+ • Anti-Delete      : *${settings.antiDelete ? 'ENABLED 🟢' : 'DISABLED 🔴'}*
+ • Anti-Link        : *${settings.antiLink ? 'ENABLED 🟢' : 'DISABLED 🔴'}*
+ • Auto Sticker     : *${settings.autoSticker ? 'ENABLED 🟢' : 'DISABLED 🔴'}*
+ • Auto Typing      : *${settings.autoTyping ? 'ENABLED 🟢' : 'DISABLED 🔴'}*
+ • Auto Recording   : *${settings.autoRecording ? 'ENABLED 🟢' : 'DISABLED 🔴'}*
+ • Welcome Message  : *${settings.welcomeMessage ? 'ENABLED 🟢' : 'DISABLED 🔴'}*
+
+*POWERED BY ALLY SCOTT TECH*`;
+
+      await sock.sendMessage(from, { text: settingsStatus }, { quoted: msg });
+    }
+
+    // 3. PING / LATENCY
+    if (command === '.ping' || command === '!ping') {
+      const start = Date.now();
+      await sock.sendMessage(from, { text: '📡 *[PINGING SERVER NODE...]*' }, { quoted: msg });
+      const latency = Date.now() - start;
+      await sock.sendMessage(from, { text: `⚡ *[PONG!]* System Latency: *${latency}ms*\n*Status:* Operational 🚀` }, { quoted: msg });
+    }
+
+    // 4. OSINT TOOLS (.iplookup, .tempmail, .subdomain)
+    if (command === '.iplookup' || command === '!iplookup') {
+      if (!query) return sock.sendMessage(from, { text: '⚠️ [ERROR]: IP Address required.\n*Usage:* `.iplookup 8.8.8.8`' }, { quoted: msg });
+      await sock.sendMessage(from, { text: '🔍 *[INITIATING IP GEOLOCATION TARGET SEARCH...]*' }, { quoted: msg });
+      try {
+        const res = await axios.get(`http://ip-api.com/json/${query}`);
+        const data = res.data;
+        if (data.status === 'fail') return sock.sendMessage(from, { text: '❌ [ERROR]: Target IP not found or invalid!' }, { quoted: msg });
+        const ipInfo = `💻 *[ IP GEOLOCATION INTELLIGENCE ]*\n\n🌐 IP Address : ${data.query}\n🏴 Country    : ${data.country}\n🏙️ City       : ${data.city}\n📡 ISP        : ${data.isp}\n🗺️ Coordinates: ${data.lat}, ${data.lon}\n\n*POWERED BY ALLY SCOTT*`;
+        await sock.sendMessage(from, { text: ipInfo }, { quoted: msg });
+      } catch (e) {
+        await sock.sendMessage(from, { text: '❌ [ERROR]: IP Lookup database unreachable.' }, { quoted: msg });
+      }
+    }
+
+    if (command === '.tempmail' || command === '!tempmail') {
+      await sock.sendMessage(from, { text: '⏳ *[GENERATING ANONYMOUS MAIL SERVER...]*' }, { quoted: msg });
+      try {
+        const res = await axios.get('https://www.1secmail.com/api/v1/?action=genRandomMailbox&count=1');
+        await sock.sendMessage(from, { text: `📧 *[ DISPOSABLE TEMP MAIL ]*\n\nTarget Email: *${res.data[0]}*\n\nUse this node for secure operations!` }, { quoted: msg });
+      } catch (e) {
+        await sock.sendMessage(from, { text: '❌ [ERROR]: TempMail service unreachable.' }, { quoted: msg });
+      }
+    }
+
+    if (command === '.subdomain' || command === '!subdomain') {
+      if (!query) return sock.sendMessage(from, { text: '⚠️ [ERROR]: Domain target required.\n*Usage:* `.subdomain google.com`' }, { quoted: msg });
+      await sock.sendMessage(from, { text: '🔍 *[SCANNING TARGET HOST SUBDOMAINS...]*' }, { quoted: msg });
+      try {
+        const res = await axios.get(`https://api.hackertarget.com/hostsearch/?q=${query}`);
+        await sock.sendMessage(from, { text: `🔍 *[ HOST DISCOVERY RESULT: ${query} ]*\n\n${res.data.slice(0, 1000)}\n\n*POWERED BY ALLY SCOTT*` }, { quoted: msg });
+      } catch (e) {
+        await sock.sendMessage(from, { text: '❌ [ERROR]: Host search scan failed.' }, { quoted: msg });
+      }
+    }
+
+    // 5. GROUP MANAGEMENT (.groupinfo & .topactive)
+    if (command === '.groupinfo' || command === '.gi') {
+      if (!isGroup) return sock.sendMessage(from, { text: '⚠️ [ERROR]: Group channel command only!' }, { quoted: msg });
+      try {
+        const meta = await sock.groupMetadata(from);
+        const admins = meta.participants.filter(p => p.admin !== null).map(p => `@${p.id.split('@')[0]}`);
+        const creationDate = new Date(meta.creation * 1000).toLocaleDateString('en-GB');
+
+        const infoText = `📊 *[ GROUP METADATA INTELLIGENCE ]*
+
+🏷️ *Group Name:* ${meta.subject}
+🆔 *Group ID:* ${meta.id}
+📅 *Created On:* ${creationDate}
+👤 *Group Owner:* @${meta.owner ? meta.owner.split('@')[0] : 'Unknown'}
+👥 *Total Members:* ${meta.participants.length}
+👑 *Admins (${admins.length}):*
+${admins.join('\n')}
+
+📝 *Group Description:*
+${meta.desc ? meta.desc.toString() : 'No description set.'}
+
+*POWERED BY ALLY SCOTT TECH*`;
+
+        await sock.sendMessage(from, { text: infoText, mentions: meta.participants.map(p => p.id) }, { quoted: msg });
+      } catch (e) {
+        await sock.sendMessage(from, { text: '❌ [ERROR]: Failed to fetch group metadata.' }, { quoted: msg });
+      }
+    }
+
+    if (command === '.topactive' || command === '.top') {
+      if (!isGroup) return sock.sendMessage(from, { text: '⚠️ [ERROR]: Group channel command only!' }, { quoted: msg });
       
-      if (quotedMsg) {
-        const messageType = Object.keys(quotedMsg)[0];
-        const isViewOnce = messageType === 'viewOnceMessage' || messageType === 'viewOnceMessageV2';
+      const groupData = [];
+      for (let [key, value] of messageCounter.entries()) {
+        if (key.startsWith(`${from}_`)) {
+          const userJid = key.split('_')[1];
+          groupData.push({ jid: userJid, count: value });
+        }
+      }
 
-        if (isViewOnce) {
-          try {
-            const viewOnceContent = quotedMsg[messageType].message;
-            const mediaType = Object.keys(viewOnceContent)[0];
-            const buffer = await downloadMediaMessage({ message: viewOnceContent }, 'buffer', {});
+      if (groupData.length === 0) {
+        return sock.sendMessage(from, { text: '📊 *[TOP ACTIVE MEMBERS]*\n\nNo message activity logged yet in this session.' }, { quoted: msg });
+      }
 
-            if (mediaType === 'imageMessage') {
-              await sock.sendMessage(from, { 
-                image: buffer, 
-                caption: '🔓 *View Once Image Downloaded*\n\n*Powered by ALLY SCOTT*' 
-              }, { quoted: msg });
-            } else if (mediaType === 'videoMessage') {
-              await sock.sendMessage(from, { 
-                video: buffer, 
-                caption: '🔓 *View Once Video Downloaded*\n\n*Powered by ALLY SCOTT*' 
-              }, { quoted: msg });
-            }
-          } catch (err) {
-            console.error('Error downloading View Once via .vv:', err);
-            await sock.sendMessage(from, { text: '❌ Failed to process View Once media.' }, { quoted: msg });
-          }
-        } else {
-          await sock.sendMessage(from, { text: '⚠️ Please reply directly to a View Once message using .vv' }, { quoted: msg });
+      groupData.sort((a, b) => b.count - a.count);
+      const topMembers = groupData.slice(0, 10);
+
+      let leaderboardText = `🏆 *[ TOP ACTIVE MEMBERS LEADERBOARD ]*\n\n`;
+      let mentions = [];
+      topMembers.forEach((member, index) => {
+        leaderboardText += `${index + 1}. 👤 @${member.jid.split('@')[0]} ── ✉️ *${member.count} messages*\n`;
+        mentions.push(member.jid);
+      });
+
+      leaderboardText += `\n*POWERED BY ALLY SCOTT TECH*`;
+      await sock.sendMessage(from, { text: leaderboardText, mentions }, { quoted: msg });
+    }
+
+    if (command === '.online' || command === '!online') {
+      if (!isGroup) return sock.sendMessage(from, { text: '⚠️ [ERROR]: Group channel command only!' }, { quoted: msg });
+      try {
+        const groupMetadata = await sock.groupMetadata(from);
+        const participants = groupMetadata.participants;
+        let onlineText = `🟢 *[ ACTIVE CONNECTED NODES - (${groupMetadata.subject}) ]*\n\n`;
+        let mentions = [];
+        for (let p of participants) {
+          onlineText += `👤 @${p.id.split('@')[0]}\n`;
+          mentions.push(p.id);
+        }
+        await sock.sendMessage(from, { text: onlineText, mentions }, { quoted: msg });
+      } catch (err) {
+        await sock.sendMessage(from, { text: '❌ [ERROR]: Failed to fetch connected nodes.' }, { quoted: msg });
+      }
+    }
+
+    if (command === '.tagall' || command === '!tagall') {
+      if (!isGroup) return sock.sendMessage(from, { text: '⚠️ [ERROR]: Group channel command only!' }, { quoted: msg });
+      const groupMetadata = await sock.groupMetadata(from);
+      const participants = groupMetadata.participants;
+      let text = `📢 *[ EMERGENCY BROADCAST TO ALL NODES ]*\n\n`;
+      let mentions = [];
+      for (let mem of participants) {
+        text += `👉 @${mem.id.split('@')[0]}\n`;
+        mentions.push(mem.id);
+      }
+      await sock.sendMessage(from, { text, mentions }, { quoted: msg });
+    }
+
+    // Group Controls
+    if (isGroup) {
+      const mentioned = msg.message.extendedTextMessage?.contextInfo?.mentionedJid;
+      
+      if (command === '.kick' && mentioned) {
+        await sock.groupParticipantsUpdate(from, mentioned, 'remove');
+        await sock.sendMessage(from, { text: '✅ [SUCCESS]: Target node disconnected from group.' }, { quoted: msg });
+      }
+      if (command === '.add' && query) {
+        const target = query.replace(/[^0-9]/g, '') + '@s.whatsapp.net';
+        await sock.groupParticipantsUpdate(from, [target], 'add');
+        await sock.sendMessage(from, { text: '✅ [SUCCESS]: Target node injected into group.' }, { quoted: msg });
+      }
+      if (command === '.promote' && mentioned) {
+        await sock.groupParticipantsUpdate(from, mentioned, 'promote');
+        await sock.sendMessage(from, { text: '✅ [SUCCESS]: Target node promoted to Admin status.' }, { quoted: msg });
+      }
+      if (command === '.demote' && mentioned) {
+        await sock.groupParticipantsUpdate(from, mentioned, 'demote');
+        await sock.sendMessage(from, { text: '✅ [SUCCESS]: Target node demoted to regular status.' }, { quoted: msg });
+      }
+      if (command === '.close') {
+        await sock.groupSettingUpdate(from, 'announcement');
+        await sock.sendMessage(from, { text: '🔒 [LOCKDOWN]: Channel locked! Admins only.' }, { quoted: msg });
+      }
+      if (command === '.open') {
+        await sock.groupSettingUpdate(from, 'not_announcement');
+        await sock.sendMessage(from, { text: '🔓 [UNLOCKED]: Channel opened for all nodes.' }, { quoted: msg });
+      }
+    }
+
+    // 6. MEDIA DOWNLOADER (.song / .video / .sticker / .vv)
+    if (command === '.song' || command === '!song') {
+      if (!query) return sock.sendMessage(from, { text: '⚠️ [ERROR]: Song title/keyword required!\n*Example:* `.song Drake Gods Plan`' }, { quoted: msg });
+      await sock.sendMessage(from, { text: `📥 *[EXTRACTING AUDIO DATA STREAM]:* ${query}...` }, { quoted: msg });
+      
+      try {
+        const searchResult = await yts(query);
+        const video = searchResult.videos[0];
+        if (!video) return sock.sendMessage(from, { text: '❌ [ERROR]: Track not found.' }, { quoted: msg });
+
+        const cobaltRes = await axios.post('https://api.cobalt.tools/api/json', {
+          url: video.url, downloadMode: 'audio', audioFormat: 'mp3'
+        }, { headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' } });
+
+        if (cobaltRes.data?.url) {
+          await sock.sendMessage(from, { audio: { url: cobaltRes.data.url }, mimetype: 'audio/mp4', fileName: `${video.title}.mp3` }, { quoted: msg });
+        }
+      } catch (e) {
+        await sock.sendMessage(from, { text: '❌ [ERROR]: Download node server overload.' }, { quoted: msg });
+      }
+    }
+
+    if (command === '.sticker' || command === '.s') {
+      const quotedMsg = msg.message.extendedTextMessage?.contextInfo?.quotedMessage;
+      const targetMsg = quotedMsg || msg.message;
+      const targetMediaType = Object.keys(targetMsg)[0];
+
+      if (targetMediaType === 'imageMessage') {
+        try {
+          await sock.sendMessage(from, { text: '⏳ *[GENERATING STICKER PAYLOAD...]*' }, { quoted: msg });
+          const buffer = await downloadMediaMessage({ message: targetMsg }, 'buffer', {});
+          await sock.sendMessage(from, { sticker: buffer }, { quoted: msg });
+        } catch (err) {
+          await sock.sendMessage(from, { text: '❌ [ERROR]: Sticker rendering failed.' }, { quoted: msg });
         }
       } else {
-        await sock.sendMessage(from, { text: '⚠️ Reply to a View Once message with .vv to unlock it.' }, { quoted: msg });
+        await sock.sendMessage(from, { text: '⚠️ [ERROR]: Reply to an image target with `.sticker` or `.s`!' }, { quoted: msg });
       }
     }
 
-    // 3. MEDIA DOWNLOADER (AUDIO & VIDEO BY NAME OR LINK)
-    // Audio: .song / .play / !song <Artist - Song / Link>
-    if (body.toLowerCase().startsWith('.song') || body.toLowerCase().startsWith('.play') || body.toLowerCase().startsWith('!song')) {
-      const query = body.split(' ').slice(1).join(' ');
-      if (!query) return sock.sendMessage(from, { text: '⚠️ Provide song title, artist, or YouTube link.\n\n*Example:* `.song Drake - God\'s Plan`' }, { quoted: msg });
+    if (command === '.vv' || command === '!vv') {
+      const quotedMsg = msg.message.extendedTextMessage?.contextInfo?.quotedMessage;
+      if (quotedMsg) {
+        const qMessageType = Object.keys(quotedMsg)[0];
+        if (qMessageType === 'viewOnceMessage' || qMessageType === 'viewOnceMessageV2') {
+          await sock.sendMessage(from, { text: '🔓 *[BYPASSING VIEW ONCE ENCRYPTION...]*' }, { quoted: msg });
+          const viewOnceContent = quotedMsg[qMessageType].message;
+          const vMediaType = Object.keys(viewOnceContent)[0];
+          const buffer = await downloadMediaMessage({ message: viewOnceContent }, 'buffer', {});
 
-      await sock.sendMessage(from, { text: `🔍 Searching for audio: *${query}*...` }, { quoted: msg });
-
-      try {
-        const searchResult = await yts(query);
-        const video = searchResult.videos[0];
-        if (!video) return sock.sendMessage(from, { text: '❌ No track found for your search.' }, { quoted: msg });
-
-        const stream = ytdl(video.url, { filter: 'audioonly', quality: 'highestaudio' });
-        const filePath = `./${Date.now()}.mp3`;
-        const writeStream = fs.createWriteStream(filePath);
-
-        stream.pipe(writeStream);
-        writeStream.on('finish', async () => {
-          await sock.sendMessage(from, {
-            audio: fs.readFileSync(filePath),
-            mimetype: 'audio/mp4',
-            fileName: `${video.title}.mp3`,
-            caption: `🎵 *${video.title}*\n⏱️ Duration: ${video.timestamp}\n\n*Powered by ALLY SCOTT*`
-          }, { quoted: msg });
-          fs.unlinkSync(filePath);
-        });
-      } catch (err) {
-        console.error('Audio Download Error:', err);
-        await sock.sendMessage(from, { text: '❌ Failed to download audio. Try again.' }, { quoted: msg });
+          if (vMediaType === 'imageMessage') {
+            await sock.sendMessage(from, { image: buffer, caption: '🔓 *[VIEW ONCE ENCRYPTION BROKEN]*\n*POWERED BY ALLY SCOTT*' }, { quoted: msg });
+          } else if (vMediaType === 'videoMessage') {
+            await sock.sendMessage(from, { video: buffer, caption: '🔓 *[VIEW ONCE ENCRYPTION BROKEN]*\n*POWERED BY ALLY SCOTT*' }, { quoted: msg });
+          }
+        }
+      } else {
+        await sock.sendMessage(from, { text: '⚠️ [ERROR]: Reply to a View Once message with `.vv`!' }, { quoted: msg });
       }
     }
 
-    // Video: .video / !video <Title / Link>
-    if (body.toLowerCase().startsWith('.video') || body.toLowerCase().startsWith('!video')) {
-      const query = body.split(' ').slice(1).join(' ');
-      if (!query) return sock.sendMessage(from, { text: '⚠️ Provide video title or YouTube link.\n\n*Example:* `.video Diamond Platnumz Komasava`' }, { quoted: msg });
-
-      await sock.sendMessage(from, { text: `🎬 Searching for video: *${query}*...` }, { quoted: msg });
-
-      try {
-        const searchResult = await yts(query);
-        const video = searchResult.videos[0];
-        if (!video) return sock.sendMessage(from, { text: '❌ No video found.' }, { quoted: msg });
-
-        const stream = ytdl(video.url, { quality: '18' });
-        const filePath = `./${Date.now()}.mp4`;
-        const writeStream = fs.createWriteStream(filePath);
-
-        stream.pipe(writeStream);
-        writeStream.on('finish', async () => {
-          await sock.sendMessage(from, {
-            video: fs.readFileSync(filePath),
-            caption: `🎬 *${video.title}*\n⏱️ Duration: ${video.timestamp}\n\n*Powered by ALLY SCOTT*`
-          }, { quoted: msg });
-          fs.unlinkSync(filePath);
-        });
-      } catch (err) {
-        console.error('Video Download Error:', err);
-        await sock.sendMessage(from, { text: '❌ Failed to download video. Try again.' }, { quoted: msg });
-      }
-    }
-
-    // 4. ANTI-LINK WITH OWNER BYPASS
+    // Anti-Link Guard (Exempts Owner links & Official Group link)
     if (isGroup && settings.antiLink && body.match(/chat\.whatsapp\.com\/[a-zA-Z0-9]/g)) {
-      if (!msg.key.fromMe) { 
+      if (!isOwner && !body.includes(GROUP_LINK)) { 
         await sock.sendMessage(from, { delete: msg.key });
-
         const currentWarns = (linkWarnings.get(sender) || 0) + 1;
         linkWarnings.set(sender, currentWarns);
 
         if (currentWarns === 1) {
-          await sock.sendMessage(from, {
-            text: `⚠️ *LINK WARNING (1/2)*\n\nHey @${sender.split('@')[0]}, links are not allowed here! Sending a link one more time will get you kicked.`,
-            mentions: [sender]
-          });
+          await sock.sendMessage(from, { text: `⚠️ *[LINK GUARD WARNING (1/2)]*\nNode @${sender.split('@')[0]}, group links are unauthorized!`, mentions: [sender] });
         } else if (currentWarns >= 2) {
-          await sock.sendMessage(from, {
-            text: `🚫 *MAX WARNINGS REACHED*\n\nRemoving @${sender.split('@')[0]} for sending links...`,
-            mentions: [sender]
-          });
+          await sock.sendMessage(from, { text: `🚫 *[TERMINATING NODE]:* Repeated link policy breach.`, mentions: [sender] });
           await sock.groupParticipantsUpdate(from, [sender], 'remove');
           linkWarnings.delete(sender);
         }
       }
     }
-
-    // 5. BOT MENU DASHBOARD
-    if (body.toLowerCase() === '!menu' || body.toLowerCase() === '.menu' || body.toLowerCase() === '!status') {
-      const menuText = `
-*╭═══ ALLY SCOTT VIP ENGINE ═══╮*
-│ *System Dashboard & Control Panel*
-*╰══════════════════════════════╯*
-
-*🌐 SYSTEM STATUS*
-├── Auto View Status  : *[ ${settings.autoViewStatus ? 'ENABLED 🟢' : 'DISABLED 🔴'} ]*
-├── Auto Like Status  : *[ ${settings.autoLikeStatus ? 'ENABLED 🟢' : 'DISABLED 🔴'} ]*
-├── Anti-Delete Guard : *[ ${settings.antiDelete ? 'ENABLED 🟢' : 'DISABLED 🔴'} ]*
-├── Anti-Link Guard   : *[ ${settings.antiLink ? 'ENABLED 🟢' : 'DISABLED 🔴'} ]*
-└── Presence Typing   : *[ ${settings.autoTyping ? 'ENABLED 🟢' : 'DISABLED 🔴'} ]*
-
-*⚡ MEDIA DOWNLOADER COMMANDS*
-├── *.song <Artist - Title / Link>* - Download MP3 audio
-└── *.video <Title / Link>* - Download MP4 video
-└── *.vv* / *!vv* - Reply to View Once media to unlock
-
-*👥 GROUP MANAGEMENT*
-├── *!kick @user* - Remove a targeted member
-├── *!add 2557xxx* - Add new member
-├── *!promote @user* - Assign admin
-├── *!demote @user* - Remove admin
-├── *!closegroup* - Lock group
-└── *!opengroup* - Unlock group
-
-*════════════════════════════════*
-*Powered by ALLY SCOTT TECH*
-`;
-      await sock.sendMessage(from, { text: menuText }, { quoted: msg });
-    }
-
-    // 6. GROUP MANAGEMENT COMMANDS
-    if (isGroup) {
-      const mentioned = msg.message.extendedTextMessage?.contextInfo?.mentionedJid;
-
-      if (body.startsWith('!kick') && mentioned) {
-        await sock.groupParticipantsUpdate(from, mentioned, 'remove');
-        await sock.sendMessage(from, { text: '✅ Member removed successfully.' });
-      }
-
-      if (body.startsWith('!add')) {
-        const num = body.split(' ')[1];
-        if (num) {
-          const userJid = num.replace(/[^0-9]/g, '') + '@s.whatsapp.net';
-          await sock.groupParticipantsUpdate(from, [userJid], 'add');
-          await sock.sendMessage(from, { text: '✅ Member added successfully.' });
-        }
-      }
-
-      if (body.startsWith('!promote') && mentioned) {
-        await sock.groupParticipantsUpdate(from, mentioned, 'promote');
-        await sock.sendMessage(from, { text: '✅ Member promoted to admin.' });
-      }
-
-      if (body.startsWith('!demote') && mentioned) {
-        await sock.groupParticipantsUpdate(from, mentioned, 'demote');
-        await sock.sendMessage(from, { text: '✅ Admin demoted successfully.' });
-      }
-
-      if (body === '!closegroup') {
-        await sock.groupSettingUpdate(from, 'announcement');
-        await sock.sendMessage(from, { text: '🔒 Group closed. Only admins can send messages.' });
-      }
-
-      if (body === '!opengroup') {
-        await sock.groupSettingUpdate(from, 'not_announcement');
-        await sock.sendMessage(from, { text: '🔓 Group opened for all members.' });
-      }
-    }
   });
 
-  // 7. ANTI-DELETE PROTECTION (Ignores Owner Deletions)
+  // Anti-Delete Guard (Excludes Owner deletions)
   sock.ev.on('messages.update', async (updates) => {
     if (!settings.antiDelete) return;
-
     for (const update of updates) {
       if (update.update.protocolMessage?.type === 0) {
         const deletedId = update.update.protocolMessage.key.id;
         const originalMsg = messageStore.get(deletedId);
-
-        if (originalMsg) {
-          if (!update.key.fromMe) {
-            const from = originalMsg.key.remoteJid;
-            await sock.sendMessage(from, { text: '🛡️ *Anti-Delete Triggered:* Recovered message below 👇' });
-            await sock.sendMessage(from, { forward: originalMsg });
-          }
+        
+        if (originalMsg && !originalMsg.key.fromMe) {
+          const from = originalMsg.key.remoteJid;
+          await sock.sendMessage(from, { text: '🛡️ *[ALLY SCOTT DELETED MESSAGE RECOVERED]*' });
+          await sock.sendMessage(from, { forward: originalMsg });
           messageStore.delete(deletedId);
         }
       }
@@ -317,25 +492,21 @@ async function startBot() {
   });
 }
 
-// Endpoint ya kutengeneza pairing code kutoka kwenye HTML Form
 app.get('/pair', async (req, res) => {
   const number = req.query.number;
-  if (!number) return res.status(400).json({ error: 'Phone number is required' });
-
+  if (!number) return res.status(400).json({ error: 'Phone number required' });
   const cleanedNumber = number.replace(/[^0-9]/g, '');
   try {
     if (!sock.authState.creds.registered) {
       const code = await sock.requestPairingCode(cleanedNumber);
       return res.json({ code });
     } else {
-      return res.json({ error: 'Bot is already registered & paired!' });
+      return res.json({ error: 'Already registered!' });
     }
   } catch (err) {
-    console.error('Pairing Endpoint Error:', err);
-    return res.status(500).json({ error: 'Failed to request pairing code' });
+    return res.status(500).json({ error: 'Pairing failed' });
   }
 });
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
-startBot();
+startBot(
