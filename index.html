@@ -1,162 +1,44 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ALLY SCOTT VIP ENGINE - PAIRING SYSTEM</title>
-  <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      font-family: 'Courier New', Courier, monospace;
-    }
-    body {
-      background-color: #0d0f12;
-      color: #00ff66;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-      padding: 20px;
-    }
-    .card {
-      background: #15181e;
-      border: 1px solid #00ff66;
-      box-shadow: 0 0 15px rgba(0, 255, 102, 0.2);
-      border-radius: 8px;
-      padding: 30px;
-      width: 100%;
-      max-width: 420px;
-      text-align: center;
-    }
-    h1 {
-      font-size: 1.5rem;
-      margin-bottom: 10px;
-      color: #ffffff;
-      text-shadow: 0 0 5px #00ff66;
-    }
-    p {
-      font-size: 0.85rem;
-      color: #a0a0a0;
-      margin-bottom: 25px;
-    }
-    .input-group {
-      margin-bottom: 20px;
-      text-align: left;
-    }
-    label {
-      display: block;
-      font-size: 0.8rem;
-      margin-bottom: 8px;
-      color: #00ff66;
-    }
-    input {
-      width: 100%;
-      padding: 12px;
-      background: #0d0f12;
-      border: 1px solid #333;
-      border-radius: 4px;
-      color: #fff;
-      font-size: 1rem;
-      outline: none;
-      transition: 0.3s;
-    }
-    input:focus {
-      border-color: #00ff66;
-      box-shadow: 0 0 8px rgba(0, 255, 102, 0.4);
-    }
-    button {
-      width: 100%;
-      padding: 12px;
-      background: #00ff66;
-      color: #0d0f12;
-      font-weight: bold;
-      font-size: 1rem;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      transition: 0.3s;
-    }
-    button:hover {
-      background: #00cc52;
-      box-shadow: 0 0 12px rgba(0, 255, 102, 0.6);
-    }
-    #result {
-      margin-top: 25px;
-      padding: 15px;
-      background: #0d0f12;
-      border-radius: 4px;
-      border: 1px dashed #00ff66;
-      display: none;
-    }
-    .code-display {
-      font-size: 1.8rem;
-      font-weight: bold;
-      letter-spacing: 4px;
-      color: #ffffff;
-      margin-top: 10px;
-      text-shadow: 0 0 10px #00ff66;
-    }
-    .loader {
-      display: none;
-      margin-top: 15px;
-      font-size: 0.9rem;
-      color: #e6c619;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ALLY SCOTT VIP | PAIRING</title>
+    <style>
+        body { background: #030712; color: #22c55e; font-family: monospace; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .card { background: #0f172a; padding: 30px; border-radius: 10px; box-shadow: 0 0 25px rgba(34, 197, 94, 0.2); text-align: center; border: 1px solid #166534; width: 320px; }
+        input { padding: 12px; width: 85%; margin: 15px 0; border-radius: 5px; border: 1px solid #15803d; background: #030712; color: #fff; font-size: 15px; outline: none; text-align: center; }
+        button { background: #15803d; color: white; border: none; padding: 12px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 15px; transition: 0.3s; width: 100%; }
+        button:hover { background: #16a34a; box-shadow: 0 0 12px #22c55e; }
+        #code { margin-top: 18px; font-size: 20px; color: #4ade80; font-weight: bold; word-break: break-all; }
+    </style>
 </head>
 <body>
-
-  <div class="card">
-    <h1>ALLY SCOTT VIP ENGINE</h1>
-    <p>⚡ Direct WhatsApp Pairing System</p>
-
-    <form id="pairForm">
-      <div class="input-group">
-        <label for="phone">ENTER WHATSAPP NUMBER (WITH COUNTRY CODE):</label>
-        <input type="tel" id="phone" placeholder="e.g. 2557XXXXXXXX" required>
-      </div>
-      <button type="submit">GET PAIRING CODE</button>
-    </form>
-
-    <div class="loader" id="loader">⚙️ REQUESTING PAIRING CODE FROM WHATSAPP...</div>
-
-    <div id="result">
-      <span style="font-size: 0.8rem; color: #a0a0a0;">YOUR PAIRING CODE IS:</span>
-      <div class="code-display" id="pairingCode">XXXX-XXXX</div>
+    <div class="card">
+        <h2>⚡ ALLY SCOTT VIP ⚡</h2>
+        <p style="color: #94a3b8; font-size: 12px;">ENTER NUMBER (2557XXXXXXXX)</p>
+        <input type="text" id="number" placeholder="2557XXXXXXXX">
+        <button onclick="getPairCode()">GET PAIR CODE</button>
+        <div id="code"></div>
     </div>
-  </div>
-
-  <script>
-    document.getElementById('pairForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      
-      const phoneInput = document.getElementById('phone').value;
-      const loader = document.getElementById('loader');
-      const resultDiv = document.getElementById('result');
-      const pairingCodeDisplay = document.getElementById('pairingCode');
-
-      loader.style.display = 'block';
-      resultDiv.style.display = 'none';
-
-      try {
-        const response = await fetch(`/pair?number=${encodeURIComponent(phoneInput)}`);
-        const data = await response.json();
-
-        loader.style.display = 'none';
-
-        if (data.code) {
-          pairingCodeDisplay.textContent = data.code;
-          resultDiv.style.display = 'block';
-        } else if (data.error) {
-          alert('❌ ERROR: ' + data.error);
+    <script>
+        async function getPairCode() {
+            const num = document.getElementById('number').value;
+            const codeDiv = document.getElementById('code');
+            if(!num) { codeDiv.innerText = "⚠️ Enter number!"; return; }
+            codeDiv.innerText = "⏳ Connecting...";
+            try {
+                const res = await fetch(`/pair?number=${num}`);
+                const data = await res.json();
+                if(data.code) {
+                    codeDiv.innerText = `CODE: ${data.code}`;
+                } else {
+                    codeDiv.innerText = `❌ Error: ${data.error || 'Failed'}`;
+                }
+            } catch(e) {
+                codeDiv.innerText = "❌ Network error!";
+            }
         }
-      } catch (err) {
-        loader.style.display = 'none';
-        alert('❌ Failed to connect to server. Ensure your bot is running!');
-      }
-    });
-  </script>
+    </script>
 </body>
 </html>
