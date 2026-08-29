@@ -1,12 +1,13 @@
 {
-  "name": "ally-scott-vip-engine",
-  "version": "9.0.0",
-  "description": "Elite WhatsApp Automation Bot by Ally Scott Tech",
+  "name": "ally-scott-hacker-bot",
+  "version": "12.2.0",
+  "description": "Elite WhatsApp Bot Powered by Ally Scott Tech",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
+    "@hapi/boom": "^10.0.1",
     "@whiskeysockets/baileys": "^6.7.0",
     "axios": "^1.6.8",
     "express": "^4.19.2",
