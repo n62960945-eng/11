@@ -85,7 +85,7 @@ async function startAllyScottBot() {
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false,
         auth: state,
-        browser: ["Ally Scott VIP", "Safari", "12.2.0"]
+        browser: ["Windows", "Chrome", "122.0.0.0"]
     });
 
     globalSock = sock;
