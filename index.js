@@ -428,52 +428,78 @@ async function startAllyScottBot() {
                 break;
             }
 
-            // Media Download Feature (.song / .play)
+            // Media Download Feature (.song / .play) - Enhanced & Robust
             case 'song':
             case 'play': {
-                if (!q) return sock.sendMessage(senderJid, { text: '⚠️ Please provide a song name! Example: .song Diamond Platnumz Komasava' }, { quoted: m });
+                if (!q) return sock.sendMessage(senderJid, { text: '⚠️ Tafadhali weka jina la wimbo! Mfano: .song Diamond Komasava' }, { quoted: m });
                 
-                await sock.sendMessage(senderJid, { text: `🎶 *Searching & Downloading Media:* "${q}"...\nPlease wait a moment.` }, { quoted: m });
+                await sock.sendMessage(senderJid, { text: `🎶 *Inatafuta na kudownload audio ya:* "${q}"...\nTafadhali subiri kidogo.` }, { quoted: m });
+
+                let audioDownloaded = false;
 
                 try {
-                    let apiSearch = await axios.get(`https://api.siputzx.my.id/api/s/youtube?query=${encodeURIComponent(q)}`);
+                    // JARIBU API YA KWANZA (YAPTS / SIPUTZX)
+                    let apiSearch = await axios.get(`https://api.siputzx.my.id/api/s/youtube?query=${encodeURIComponent(q)}`, { timeout: 10000 });
                     let results = apiSearch.data?.data || apiSearch.data?.results;
                     
-                    if (!results || results.length === 0) {
-                        return sock.sendMessage(senderJid, { 
-                            text: `🎶 *MEDIA ENGINE REPORT* 🎶\n` +
-                                  `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                  `• Query: *${q}*\n` +
-                                  `• Status: *Media downloaded and processed successfully via Ally Scott Hub!*\n` +
-                                  `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                  `🔗 Support Group: ${GROUP_LINK}\n` +
-                                  `🔥 POWERED BY ALLY SCOTT TECH` 
-                        }, { quoted: m });
-                    }
+                    if (results && results.length > 0) {
+                        let ytUrl = results[0].url || `https://www.youtube.com/watch?v=${results[0].videoId}`;
+                        let title = results[0].title || q;
+                        
+                        let dlApi = await axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(ytUrl)}`, { timeout: 15000 });
+                        let downloadAudioUrl = dlApi.data?.data?.dl || dlApi.data?.dl_url || dlApi.data?.url;
 
-                    let ytUrl = results[0].url;
-                    let dlApi = await axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(ytUrl)}`);
-                    let downloadAudioUrl = dlApi.data?.data?.dl || dlApi.data?.dl_url;
-
-                    if (downloadAudioUrl) {
-                        await sock.sendMessage(senderJid, { 
-                            audio: { url: downloadAudioUrl }, 
-                            mimetype: 'audio/mp4', 
-                            ptt: false,
-                            caption: `🎵 *${results[0].title || q}* 🎵\n🔗 Support Group: ${GROUP_LINK}\n🔥 POWERED BY ALLY SCOTT TECH`
-                        }, { quoted: m });
-                    } else {
-                        throw new Error('Download link not found');
+                        if (downloadAudioUrl) {
+                            await sock.sendMessage(senderJid, { 
+                                audio: { url: downloadAudioUrl }, 
+                                mimetype: 'audio/mp4', 
+                                ptt: false,
+                                caption: `🎵 *${title}* 🎵\n🔗 ${GROUP_LINK}\n🔥 ALLY SCOTT TECH`
+                            }, { quoted: m });
+                            audioDownloaded = true;
+                        }
                     }
-                } catch (e) {
-                    const songFeedback = `🎶 *MEDIA DOWNLOAD HUB* 🎶\n` +
-                                         `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                         `• Target Media: *${q}*\n` +
-                                         `• Status: *Successfully retrieved & dispatched by Ally Scott Tech!*\n` +
-                                         `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                         `🔗 Support Group: ${GROUP_LINK}\n` +
-                                         `🔥 POWERED BY ALLY SCOTT TECH`;
-                    await sock.sendMessage(senderJid, { text: songFeedback }, { quoted: m });
+                } catch (err) {
+                    console.log('[MEDIA ERROR API 1]:', err.message);
+                }
+
+                // KAMA API YA KWANZA IMEGOMA, JARIBU API YA PILI (DAPI / ALTERNATIVE LOADER)
+                if (!audioDownloaded) {
+                    try {
+                        let altApi = await axios.get(`https://deliriussapi-oficial.vercel.app/download/ytmp3?url=${encodeURIComponent(q)}`, { timeout: 12000 });
+                        let altDownloadUrl = altApi.data?.data?.download?.url || altApi.data?.downloadUrl;
+                        let altTitle = altApi.data?.data?.title || q;
+
+                        if (altDownloadUrl) {
+                            await sock.sendMessage(senderJid, { 
+                                audio: { url: altDownloadUrl }, 
+                                mimetype: 'audio/mp4', 
+                                ptt: false,
+                                caption: `🎵 *${altTitle}* 🎵\n🔗 ${GROUP_LINK}\n🔥 ALLY SCOTT TECH`
+                            }, { quoted: m });
+                            audioDownloaded = true;
+                        }
+                    } catch (err) {
+                        console.log('[MEDIA ERROR API 2]:', err.message);
+                    }
+                }
+
+                // KAMA ZOTE ZIMEGOMA KULETA AUDIO YA MOJA KWA MOJA, TUMA LINK YAKE SAHIHI YA KUDOWNLOAD
+                if (!audioDownloaded) {
+                    try {
+                        let searchFallback = await axios.get(`https://api.siputzx.my.id/api/s/youtube?query=${encodeURIComponent(q)}`, { timeout: 8000 });
+                        let item = searchFallback.data?.data?.[0] || searchFallback.data?.results?.[0];
+                        if (item && item.url) {
+                            await sock.sendMessage(senderJid, { 
+                                text: `🎵 *MEDIA FOUND (Direct Stream)*\n\n• Jina: *${item.title || q}*\n• Link: ${item.url}\n\n*Imeshindikana kupakua faili moja kwa moja kwa sasa kutokana na usalama wa seva, tumia link hii kusikiliza au kudownload.*\n\n🔗 ${GROUP_LINK}\n🔥 ALLY SCOTT TECH` 
+                            }, { quoted: m });
+                            audioDownloaded = true;
+                        }
+                    } catch (e) {}
+                }
+
+                if (!audioDownloaded) {
+                    await sock.sendMessage(senderJid, { text: `❌ Samahani kiongozi, haikuwezekana kupata faili la audio kwa jina hilo (${q}). Jaribu tena baada ya sekunde chache.` }, { quoted: m });
                 }
                 break;
             }
