@@ -1,635 +1,456 @@
-const {
-  default: makeWASocket,
-  useMultiFileAuthState,
-  downloadMediaMessage,
-  fetchLatestBaileysVersion,
-  DisconnectReason
-} = require('@whiskeysockets/baileys');
-const express = require('express');
-const pino = require('pino');
-const path = require('path');
-const os = require('os');
-const axios = require('axios');
+/**
+ * ALLY SCOTT VIP ENGINE - MULTI-DEVICE WHATSAPP BOT
+ * Powered by Ally Scott Tech
+ */
 
+const {
+    default: makeWASocket,
+    useMultiFileAuthState,
+    DisconnectReason,
+    fetchLatestBaileysVersion,
+    getContentType,
+    downloadContentFromMessage
+} = require('@whiskeysockets/baileys');
+const { Boom } = require('@hapi/boom');
+const pino = require('pino');
+const fs = require('fs');
+const path = require('path');
+const axios = require('axios');
+const express = require('express');
+
+// Express Server for Web Pairing & Render Uptime
 const app = express();
 const PORT = process.env.PORT || 10000;
 
 const GROUP_LINK = "https://chat.whatsapp.com/GKlxbFDAh8t1CDXQArhJle";
 
-app.use(express.static(__dirname));
+let globalSock = null;
 
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Serve HTML file for pairing
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+    const htmlPath = path.join(__dirname, 'index.html');
+    if (fs.existsSync(htmlPath)) {
+        res.sendFile(htmlPath);
+    } else {
+        res.send('<html><body style="background:#0b0f19;color:#00ff66;font-family:monospace;text-align:center;padding:50px;"><h1>ALLY SCOTT VIP ENGINE ACTIVE</h1><p>index.html not found, but server is running!</p></body></html>');
+    }
 });
 
-// Advanced Hacker Matrix Bot Configuration
-const settings = {
-  autoViewStatus: true,
-  autoLikeStatus: true,
-  antiDelete: true,
-  antiLink: true,
-  autoReact: true,
-  autoSticker: true,
-  autoTyping: true,
-  autoRecording: false,
-  welcomeMessage: true,
-  welcomeText: "ACCESS GRANTED: Welcome to the elite matrix.\nViolate protocols and experience immediate termination."
+// API endpoint to fetch pairing code via web
+app.get('/get-code', async (req, res) => {
+    const phoneNumber = req.query.phone;
+    if (!phoneNumber) {
+        return res.json({ success: false, error: 'Phone number is required!' });
+    }
+    
+    if (!globalSock) {
+        return res.json({ success: false, error: 'Bot session is initializing, please wait 10 seconds and try again.' });
+    }
+
+    try {
+        let cleanNumber = phoneNumber.replace(/[^0-9]/g, '');
+        if (!globalSock.authState.creds.registered) {
+            let code = await globalSock.requestPairingCode(cleanNumber);
+            code = code?.match(/.{1,4}/g)?.join('-') || code;
+            return res.json({ success: true, code: code });
+        } else {
+            return res.json({ success: false, error: 'Bot is already connected and registered!' });
+        }
+    } catch (err) {
+        return res.json({ success: false, error: err.message || 'Failed to generate pairing code.' });
+    }
+});
+
+app.listen(PORT, () => {
+    console.log(`[SERVER] Ally Scott Web Engine running on port ${PORT}`);
+});
+
+// Bot Settings State
+const botSettings = {
+    autoStatusView: true,
+    autoLikeStatus: true,
+    antiLink: true,
+    antiDelete: true
 };
 
-const messageStore = new Map();
-let sock;
+async function startAllyScottBot() {
+    const { state, saveCreds } = await useMultiFileAuthState('./session');
+    const { version } = await fetchLatestBaileysVersion();
 
-async function startBot() {
-  const { state, saveCreds } = await useMultiFileAuthState('./session');
-  const { version } = await fetchLatestBaileysVersion();
+    const sock = makeWASocket({
+        version,
+        logger: pino({ level: 'silent' }),
+        printQRInTerminal: false,
+        auth: state,
+        browser: ["Ally Scott VIP", "Safari", "12.2.0"]
+    });
 
-  sock = makeWASocket({
-    version,
-    logger: pino({ level: 'silent' }),
-    printQRInTerminal: false,
-    auth: state
-  });
+    globalSock = sock;
 
-  sock.ev.on('creds.update', saveCreds);
+    sock.ev.on('creds.update', saveCreds);
 
-  sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect } = update;
-    if (connection === 'close') {
-      const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-      if (shouldReconnect) startBot();
-    } else if (connection === 'open') {
-      console.log('\n💀 [HACKER MATRIX ONLINE]: ALLY SCOTT ELITE BOT FULLY ARMED & READY!');
-      try {
-        await sock.updateProfileStatus('💀 ALLY SCOTT VIP | HACKER MATRIX ACTIVE 🟢🔥');
-      } catch (e) {}
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect } = update;
+        if (connection === 'close') {
+            const reason = new Boom(lastDisconnect?.error)?.output.statusCode;
+            console.log('[DISCONNECT] Reason:', reason);
+            if (reason !== DisconnectReason.loggedOut) {
+                startAllyScottBot();
+            } else {
+                console.log('[LOGGED OUT] Session deleted. Please restart.');
+                if (fs.existsSync('./session')) fs.rmSync('./session', { recursive: true, force: true });
+                startAllyScottBot();
+            }
+        } else if (connection === 'open') {
+            console.log('[CONNECTED] Ally Scott VIP Engine is fully online & operational! 🚀');
+        }
+    });
 
-      setInterval(async () => {
-        try {
-          const uptimeSec = process.uptime();
-          const hrs = Math.floor(uptimeSec / 3600);
-          const mins = Math.floor((uptimeSec % 3600) / 60);
-          const bioText = `💀 ALLY SCOTT HACKER | Uptime: ${hrs}h ${mins}m | MATRIX ACTIVE 🟢`;
-          await sock.updateProfileStatus(bioText);
-        } catch (e) {}
-      }, 300000);
-    }
-  });
+    // Auto Status View & Like Handler
+    sock.ev.on('messages.upsert', async ({ messages }) => {
+        const m = messages[0];
+        if (!m.message) return;
 
-  // Welcome & Anti-Link Group Event Listeners
-  sock.ev.on('group-participants.update', async (update) => {
-    const { id, participants, action } = update;
-    if (action === 'add' && settings.welcomeMessage) {
-      for (let user of participants) {
-        const welcomeMsg = `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                           `  💀 *MATRIX WELCOME ALERT* 💀\n` +
-                           `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                           `Target Acquired: @${user.split('@')[0]}\n` +
-                           `------------------------------------------\n` +
-                           `${settings.welcomeText}\n` +
-                           `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                           `🔗 Support Group: ${GROUP_LINK}\n` +
-                           `🔥 POWERED BY ALLY SCOTT TECH\n` +
-                           `━━━━━━━━━━━━━━━━━━━━━━━━━━`;
-        await sock.sendMessage(id, { text: welcomeMsg, mentions: [user] });
-      }
-    }
-  });
+        const senderJid = m.key.remoteJid;
 
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify') return;
-    const msg = messages[0];
-    if (!msg.message) return;
-
-    const from = msg.key.remoteJid;
-    const isGroup = from.endsWith('@g.us');
-    const sender = msg.key.participant || from;
-    const isOwner = msg.key.fromMe; 
-
-    // INSTANT AUTO VIEW & LIKE STATUS
-    if (from === 'status@broadcast') {
-      if (settings.autoViewStatus) {
-        try {
-          await sock.readMessages([msg.key]);
-        } catch (e) {}
-      }
-      if (settings.autoLikeStatus) {
-        try {
-          await sock.sendMessage(from, { react: { text: '💀', key: msg.key } }, { statusJidList: [msg.key.participant] });
-        } catch (e) {}
-      }
-      return;
-    }
-
-    if (settings.autoTyping) await sock.sendPresenceUpdate('composing', from);
-    if (settings.autoRecording) await sock.sendPresenceUpdate('recording', from);
-
-    if (msg.key.id) messageStore.set(msg.key.id, msg);
-
-    const typeMsg = Object.keys(msg.message)[0];
-    const body = (typeMsg === 'conversation') ? msg.message.conversation :
-                 (typeMsg === 'extendedTextMessage') ? msg.message.extendedTextMessage.text :
-                 (typeMsg === 'imageMessage') ? msg.message.imageMessage.caption :
-                 (typeMsg === 'videoMessage') ? msg.message.videoMessage.caption : '';
-
-    // Anti-Link Protocol Check in Groups
-    if (isGroup && settings.antiLink && body && (body.includes('chat.whatsapp.com') || body.includes('http://') || body.includes('https://'))) {
-      if (!isOwner) {
-        try {
-          await sock.sendMessage(from, { delete: msg.key });
-          await sock.sendMessage(from, { text: `⚠️ [ANTI-LINK PROTOCOL]: Links are strictly prohibited in this matrix!` });
-        } catch (e) {}
-      }
-    }
-
-    if (!body) return;
-
-    const command = body.trim().split(' ')[0].toLowerCase();
-    const args = body.trim().split(' ').slice(1);
-
-    if (settings.autoSticker && typeMsg === 'imageMessage' && !isOwner) {
-      try {
-        const buffer = await downloadMediaMessage(msg, 'buffer', {});
-        await sock.sendMessage(from, { sticker: buffer }, { quoted: msg });
-      } catch (e) {}
-    }
-
-    // 1. MENU COMMAND
-    if (command === '.menu' || command === '.help' || command === '!menu') {
-      if (settings.autoReact) {
-        await sock.sendMessage(from, { react: { text: '💀', key: msg.key } });
-      }
-      const menuText = `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                       `  💀 *ALLY SCOTT HACKER v12.2* 💀\n` +
-                       `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                       ` ║ 🚀 Status: MATRIX SECURE\n` +
-                       ` ║ 👑 Master: Ally Scott Tech\n` +
-                       `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                       ` ┌─❖ *HACKER & CORE COMMANDS*\n` +
-                       ` │ • .menu / .help\n` +
-                       ` │ • .ping\n` +
-                       ` │ • .sysinfo\n` +
-                       ` │ • .owner\n` +
-                       ` │ • .runtime\n` +
-                       ` │ • .settings\n` +
-                       ` └───────────────\n\n` +
-                       ` ┌─❖ *MEDIA & VIP DOWNLOADS*\n` +
-                       ` │ • .song <artist & title>\n` +
-                       ` │ • .ytchannel <id>\n` +
-                       ` └───────────────\n\n` +
-                       ` ┌─❖ *SILENT & ATTACK TOOLS*\n` +
-                       ` │ • .nambabomb <number>\n` +
-                       ` │ • .silentcrash <number>\n` +
-                       ` │ • .ghosttext <number> | <msg>\n` +
-                       ` │ • .bug <target_id>\n` +
-                       ` │ • .sticker / .s\n` +
-                       ` │ • .whois <number>\n` +
-                       ` │ • .tts <text>\n` +
-                       ` │ • .weather <city>\n` +
-                       ` └───────────────\n\n` +
-                       ` ┌─❖ *CYBER TOGGLES*\n` +
-                       ` │ • .autotyping [on/off]\n` +
-                       ` │ • .autorecording [on/off]\n` +
-                       ` │ • .autosticker [on/off]\n` +
-                       ` │ • .welcomemsg [on/off]\n` +
-                       ` └───────────────\n\n` +
-                       ` ┌─❖ *GROUP MANAGEMENT*\n` +
-                       ` │ • .tagall\n` +
-                       ` │ • .groupinfo\n` +
-                       ` │ • .link\n` +
-                       ` │ • .antilink [on/off]\n` +
-                       ` │ • .setwelcome <text>\n` +
-                       ` └───────────────\n\n` +
-                       ` ┌─❖ *VIEW ONCE & AUTOMATION*\n` +
-                       ` │ • .vv (Reply to View Once)\n` +
-                       ` │ • .autostatus [on/off]\n` +
-                       ` │ • .autolike [on/off]\n` +
-                       ` │ • .antidelete [on/off]\n` +
-                       ` │ • .bc <message>\n` +
-                       ` └───────────────\n\n` +
-                       `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                       `🔗 Support Group: ${GROUP_LINK}\n` +
-                       `🔥 POWERED BY ALLY SCOTT TECH\n` +
-                       `━━━━━━━━━━━━━━━━━━━━━━━━━━`;
-
-      const feedText = `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                       `⚡ [FEEDBACK: MENU GENERATED]\n` +
-                       `------------------------------------------\n` +
-                       menuText;
-
-      await sock.sendMessage(from, { text: feedText }, { quoted: msg });
-    }
-
-    // 2. PING COMMAND
-    if (command === '.ping') {
-      const start = Date.now();
-      await sock.sendMessage(from, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚡ [FEEDBACK: SCANNING NODES...]\n------------------------------------------\n🔗 Support Group: ${GROUP_LINK}\n💀 POWERED BY ALLY SCOTT TECH\n━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
-      const latency = Date.now() - start;
-      await sock.sendMessage(from, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚡ [FEEDBACK: PING SUCCESSFUL]\n------------------------------------------\nMatrix Response: *${latency}ms* (Ultra Fast)\n\n🔗 Support Group: ${GROUP_LINK}\n💀 POWERED BY ALLY SCOTT TECH\n━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
-    }
-
-    // 3. RUNTIME COMMAND
-    if (command === '.runtime' || command === '.uptime') {
-      const uptimeSec = process.uptime();
-      const hrs = Math.floor(uptimeSec / 3600);
-      const mins = Math.floor((uptimeSec % 3600) / 60);
-      const secs = Math.floor(uptimeSec % 60);
-      
-      const feedText = `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                       `⏱️ [FEEDBACK: RUNTIME RETRIEVED]\n` +
-                       `------------------------------------------\n` +
-                       `• System Up: ${hrs}h ${mins}m ${secs}s\n\n` +
-                       `🔗 Support Group: ${GROUP_LINK}\n` +
-                       `💀 POWERED BY ALLY SCOTT TECH\n` +
-                       `━━━━━━━━━━━━━━━━━━━━━━━━━━`;
-      await sock.sendMessage(from, { text: feedText }, { quoted: msg });
-    }
-
-    // 4. SYSINFO COMMAND
-    if (command === '.sysinfo' || command === '.info') {
-      const uptimeSec = process.uptime();
-      const hrs = Math.floor(uptimeSec / 3600);
-      const mins = Math.floor((uptimeSec % 3600) / 60);
-      
-      const infoText = `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                       `💻 [FEEDBACK: SYSTEM CORE METRICS]\n` +
-                       `------------------------------------------\n` +
-                       `• Engine: Elite Matrix Shield\n` +
-                       `• Status: SECURE 🟢\n` +
-                       `• Platform: Render Cloud\n` +
-                       `• Uptime: ${hrs}h ${mins}m\n` +
-                       `• Free RAM: ${(os.freemem() / 1024 / 1024).toFixed(2)} MB\n\n` +
-                       `🔗 Support Group: ${GROUP_LINK}\n` +
-                       `💀 POWERED BY ALLY SCOTT TECH\n` +
-                       `━━━━━━━━━━━━━━━━━━━━━━━━━━`;
-      await sock.sendMessage(from, { text: infoText }, { quoted: msg });
-    }
-
-    // 5. OWNER COMMAND
-    if (command === '.owner') {
-      const devText = `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                      `👑 [FEEDBACK: ARCHITECT LOADED]\n` +
-                      `------------------------------------------\n` +
-                      `• Brand: Ally Scott Tech\n` +
-                      `• Privileges: Root Control\n\n` +
-                      `🔗 Support Group: ${GROUP_LINK}\n` +
-                      `💀 POWERED BY ALLY SCOTT TECH\n` +
-                      `━━━━━━━━━━━━━━━━━━━━━━━━━━`;
-      await sock.sendMessage(from, { text: devText }, { quoted: msg });
-    }
-
-    // 6. SETTINGS COMMAND
-    if (command === '.settings') {
-      const setStatus = `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                        `⚙️ [FEEDBACK: CONFIG MATRIX]\n` +
-                        `------------------------------------------\n` +
-                        `• Auto Status : ${settings.autoViewStatus ? 'ON 🟢' : 'OFF 🔴'}\n` +
-                        `• Auto Like   : ${settings.autoLikeStatus ? 'ON 🟢' : 'OFF 🔴'}\n` +
-                        `• Anti Delete : ${settings.antiDelete ? 'ON 🟢' : 'OFF 🔴'}\n` +
-                        `• Anti Link   : ${settings.antiLink ? 'ON 🟢' : 'OFF 🔴'}\n` +
-                        `• Auto React  : ${settings.autoReact ? 'ON 🟢' : 'OFF 🔴'}\n` +
-                        `• Auto Sticker: ${settings.autoSticker ? 'ON 🟢' : 'OFF 🔴'}\n` +
-                        `• Auto Typing : ${settings.autoTyping ? 'ON 🟢' : 'OFF 🔴'}\n` +
-                        `• Auto Record : ${settings.autoRecording ? 'ON 🟢' : 'OFF 🔴'}\n` +
-                        `• Welcome Msg : ${settings.welcomeMessage ? 'ON 🟢' : 'OFF 🔴'}\n\n` +
-                        `🔗 Support Group: ${GROUP_LINK}\n` +
-                        `💀 POWERED BY ALLY SCOTT TECH\n` +
-                        `━━━━━━━━━━━━━━━━━━━━━━━━━━`;
-      await sock.sendMessage(from, { text: setStatus }, { quoted: msg });
-    }
-
-    // 7. NAMBABOMB COMMAND
-    if (command === '.nambabomb') {
-      if (!args.length) return sock.sendMessage(from, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚠️ [FEEDBACK ERROR: MISSING NUMBER]\n------------------------------------------\nExample: .nambabomb 2557xxxxxxxx\n\n🔗 Support Group: ${GROUP_LINK}\n💀 POWERED BY ALLY SCOTT TECH\n━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
-      
-      let targetNum = args[0].replace(/[^0-9]/g, '') + '@s.whatsapp.net';
-      await sock.sendMessage(from, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━\n💀 [FEEDBACK: ATTACK INITIATED]\n------------------------------------------\nDeploying NambaBomb spam packets...\n\n🔗 Support Group: ${GROUP_LINK}\n💀 POWERED BY ALLY SCOTT TECH\n━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
-
-      const attackPayload = `🚨 [HACKER SPAM ALERT] 🚨\nYour number has been targeted by Ally Scott Matrix Engine!\nMaintain cybersecurity awareness.\n💀 POWERED BY ALLY SCOTT TECH`;
-
-      for (let i = 1; i <= 10; i++) {
-        await new Promise(resolve => setTimeout(resolve, 300));
-        await sock.sendMessage(targetNum, { text: `${attackPayload} [Packet #${i}]` }).catch(() => {});
-      }
-      await sock.sendMessage(from, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━\n✅ [FEEDBACK SUCCESS: ATTACK ENDED]\n------------------------------------------\nNambaBomb sequence completed successfully.\n\n🔗 Support Group: ${GROUP_LINK}\n━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
-    }
-
-    // 8. SILENT CRASH COMMAND
-    if (command === '.silentcrash') {
-      if (!args.length) return sock.sendMessage(from, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚠️ [FEEDBACK ERROR: MISSING NUMBER]\n------------------------------------------\nExample: .silentcrash 2557xxxxxxxx\n\n🔗 Support Group: ${GROUP_LINK}\n💀 POWERED BY ALLY SCOTT TECH\n━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
-
-      let targetNum = args[0].replace(/[^0-9]/g, '') + '@s.whatsapp.net';
-      await sock.sendMessage(from, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━\n👻 [FEEDBACK: SILENT PROTOCOL]\n------------------------------------------\nStealth socket attack launched on target.\n\n🔗 Support Group: ${GROUP_LINK}\n💀 POWERED BY ALLY SCOTT TECH\n━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
-
-      for (let i = 1; i <= 12; i++) {
-        await new Promise(resolve => setTimeout(resolve, 250));
-        await sock.sendMessage(targetNum, { text: `⚡ [NULL_POINTER_EXCEPTION_${i}] ⚡` }).catch(() => {});
-      }
-    }
-
-    // 9. GHOST TEXT COMMAND
-    if (command === '.ghosttext') {
-      const fullText = args.join(' ');
-      if (!fullText.includes('|')) {
-        return sock.sendMessage(from, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚠️ [FEEDBACK ERROR: INVALID FORMAT]\n------------------------------------------\nUse: .ghosttext <number> | <message>\nExample: .ghosttext 255712345678 | Hello target\n\n🔗 Support Group: ${GROUP_LINK}\n💀 POWERED BY ALLY SCOTT TECH\n━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
-      }
-
-      const parts = fullText.split('|');
-      let targetNum = parts[0].trim().replace(/[^0-9]/g, '') + '@s.whatsapp.net';
-      let customMsg = parts[1].trim();
-
-      try {
-        await sock.sendMessage(targetNum, { text: `💀 [STEALTH TRANSMISSION]: ${customMsg}` });
-        await sock.sendMessage(from, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━\n✅ [FEEDBACK SUCCESS: GHOST SENT]\n------------------------------------------\nMessage delivered invisibly to target.\n\n🔗 Support Group: ${GROUP_LINK}\n━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
-      } catch (e) {
-        await sock.sendMessage(from, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━\n❌ [FEEDBACK ERROR: GHOST FAILED]\n------------------------------------------\nCould not deliver stealth message.\n\n🔗 Support Group: ${GROUP_LINK}\n━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
-      }
-    }
-
-    // 10. WEATHER COMMAND
-    if (command === '.weather') {
-      if (!args.length) return sock.sendMessage(from, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚠️ [FEEDBACK ERROR: MISSING CITY]\n------------------------------------------\nExample: .weather Dar es Salaam\n\n🔗 Support Group: ${GROUP_LINK}\n💀 POWERED BY ALLY SCOTT TECH\n━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
-      const city = args.join(' ');
-      try {
-        const response = await axios.get(`https://wttr.in/${encodeURIComponent(city)}?format=j1`);
-        const current = response.data.current_condition[0];
-        const weatherText = `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                            `🌤️ [FEEDBACK: WEATHER INTEL]\n` +
-                            `------------------------------------------\n` +
-                            `• City: ${city.toUpperCase()}\n` +
-                            `• Condition: ${current.weatherDesc[0].value}\n` +
-                            `• Temperature: ${current.temp_C}°C\n` +
-                            `• Humidity: ${current.humidity}%\n` +
-                            `• Wind Speed: ${current.windspeedKmph} km/h\n\n` +
-                            `🔗 Support Group: ${GROUP_LINK}\n` +
-                            `💀 POWERED BY ALLY SCOTT TECH\n` +
-                            `━━━━━━━━━━━━━━━━━━━━━━━━━━`;
-        await sock.sendMessage(from, { text: weatherText }, { quoted: msg });
-      } catch (e) {
-        await sock.sendMessage(from, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━\n❌ [FEEDBACK ERROR: FETCH FAILED]\n------------------------------------------\nCould not retrieve weather data.\n\n🔗 Support Group: ${GROUP_LINK}\n💀 POWERED BY ALLY SCOTT TECH\n━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
-      }
-    }
-
-    // 11. TTS COMMAND
-    if (command === '.tts') {
-      if (!args.length) return sock.sendMessage(from, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚠️ [FEEDBACK ERROR: MISSING TEXT]\n------------------------------------------\nExample: .tts Hello world\n\n🔗 Support Group: ${GROUP_LINK}\n💀 POWERED BY ALLY SCOTT TECH\n━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
-      const textToSpeak = args.join(' ');
-      try {
-        const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(textToSpeak)}&tl=en&client=tw-ob`;
-        await sock.sendMessage(from, { audio: { url: ttsUrl }, mimetype: 'audio/mp4', ptt: true }, { quoted: msg });
-      } catch (e) {
-        await sock.sendMessage(from, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━\n❌ [FEEDBACK ERROR: TTS FAILED]\n------------------------------------------\nFailed to generate audio speech.\n\n🔗 Support Group: ${GROUP_LINK}\n💀 POWERED BY ALLY SCOTT TECH\n━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
-      }
-    }
-
-    // 12. WHOIS COMMAND (Deep Target Intel)
-    if (command === '.whois') {
-      if (!args.length) return sock.sendMessage(from, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚠️ [FEEDBACK ERROR: MISSING NUMBER]\n------------------------------------------\nExample: .whois 2557xxxxxxxx\n\n🔗 Support Group: ${GROUP_LINK}\n💀 POWERED BY ALLY SCOTT TECH\n━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
-      let targetNum = args[0].replace(/[^0-9]/g, '');
-      const intelText = `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                        `🔍 [FEEDBACK: TARGET INTEL FOUND]\n` +
-                        `------------------------------------------\n` +
-                        `• Number: +${targetNum}\n` +
-                        `• Status: Active in Matrix\n` +
-                        `• Security Risk: Moderate\n\n` +
-                        `🔗 Support Group: ${GROUP_LINK}\n` +
-                        `💀 POWERED BY ALLY SCOTT TECH\n` +
-                        `━━━━━━━━━━━━━━━━━━━━━━━━━━`;
-      await sock.sendMessage(from, { text: intelText }, { quoted: msg });
-    }
-
-    // 13. BUG COMMAND
-    if (command === '.bug') {
-      if (!args.length) return sock.sendMessage(from, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚠️ [FEEDBACK ERROR: MISSING TARGET]\n------------------------------------------\nProvide target phone or JID.\n\n🔗 Support Group: ${GROUP_LINK}\n💀 POWERED BY ALLY SCOTT TECH\n━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
-      let targetId = args[0].includes('@') ? args[0] : args[0].replace(/[^0-9]/g, '') + '@s.whatsapp.net';
-      await sock.sendMessage(from, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━\n💀 [FEEDBACK: SOCKET CRASH SENT]\n------------------------------------------\nTarget socket payload deployed successfully.\n\n🔗 Support Group: ${GROUP_LINK}\n💀 POWERED BY ALLY SCOTT TECH\n━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
-      await sock.sendMessage(targetId, { text: `⚡ [CRITICAL EXCEPTION 0x000] ⚡` }).catch(() => {});
-    }
-
-    // 14. SONG / YOUTUBE SEARCH & DOWNLOAD API COMMAND
-    if (command === '.song' || command === '.ytsearch' || command === '.play') {
-      const query = args.join(' ');
-      if (!query) {
-        return sock.sendMessage(from, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚠️ [FEEDBACK ERROR: MISSING QUERY]\n------------------------------------------\nExample: .song Diamond Platnumz Komasava\n\n🔗 Support Group: ${GROUP_LINK}\n💀 POWERED BY ALLY SCOTT TECH\n━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
-      }
-
-      await sock.sendMessage(from, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔍 [FEEDBACK: SEARCHING & DOWNLOADING...]\n------------------------------------------\nExtracting media nodes for: "${query}"...\n\n🔗 Support Group: ${GROUP_LINK}\n💀 POWERED BY ALLY SCOTT TECH\n━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
-
-      try {
-        const searchOptions = {
-          method: 'GET',
-          url: 'https://youtube138.p.rapidapi.com/search/',
-          params: { query: query, hl: 'en', gl: 'US' },
-          headers: {
-            'x-rapidapi-host': 'youtube138.p.rapidapi.com',
-            'x-rapidapi-key': '6b780cc80amshb91fbe8e13db42fp1acaa5jsnfc3d44d98b8c'
-          }
-        };
-
-        const searchResponse = await axios.request(searchOptions);
-        const contents = searchResponse.data.contents || [];
-        const videoItem = contents.find(item => item.video);
-
-        if (!videoItem) {
-          return sock.sendMessage(from, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━\n❌ [FEEDBACK ERROR: NO RESULT FOUND]\n------------------------------------------\nNo matching media found for: "${query}".\n\n💀 POWERED BY ALLY SCOTT TECH\n━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
+        // Auto Status View & Like
+        if (senderJid === 'status@broadcast') {
+            if (botSettings.autoStatusView) {
+                await sock.readMessages([m.key]);
+            }
+            if (botSettings.autoLikeStatus) {
+                try {
+                    await sock.sendMessage(senderJid, { react: { text: '💚', key: m.key } }, { statusJidList: [m.key.participant] });
+                } catch (e) {}
+            }
+            return;
         }
 
-        const v = videoItem.video;
-        const videoTitle = v.title || 'Unknown Title';
-        const videoId = v.videoId;
-        const videoDuration = v.lengthText || 'N/A';
-        const channelName = v.author?.title || 'Unknown Artist';
-        const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-        const thumbUrl = v.thumbnails?.[0]?.url || '';
-
-        let resultText = `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                         `🎵 [FEEDBACK: MEDIA EXTRACTED SUCCESS]\n` +
-                         `------------------------------------------\n` +
-                         `• *Title:* ${videoTitle}\n` +
-                         `• *Artist:* ${channelName}\n` +
-                         `• *Duration:* ${videoDuration}\n` +
-                         `• *Link:* ${videoUrl}\n\n` +
-                         `🔗 Support Group: ${GROUP_LINK}\n` +
-                         `💀 POWERED BY ALLY SCOTT TECH\n` +
-                         `━━━━━━━━━━━━━━━━━━━━━━━━━━`;
-
-        if (thumbUrl) {
-          await sock.sendMessage(from, { image: { url: thumbUrl }, caption: resultText }, { quoted: msg });
-        } else {
-          await sock.sendMessage(from, { text: resultText }, { quoted: msg });
+        // Anti-Delete Logger / Handler
+        if (m.message.protocolMessage && m.message.protocolMessage.type === 0) {
+            if (botSettings.antiDelete) {
+                console.log('[ANTI-DELETE] Message was deleted by user.');
+            }
+            return;
         }
 
-      } catch (err) {
-        await sock.sendMessage(from, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━\n❌ [FEEDBACK ERROR: API FAILED]\n------------------------------------------\nFailed to extract media from RapidAPI.\n\n🔗 Support Group: ${GROUP_LINK}\n💀 POWERED BY ALLY SCOTT TECH\n━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
-      }
-    }
-
-    // 15. YOUTUBE CHANNEL VIDEOS COMMAND
-    if (command === '.ytchannel') {
-      if (!args.length) {
-        return sock.sendMessage(from, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚠️ [FEEDBACK ERROR: MISSING ID]\n------------------------------------------\nExample: .ytchannel UCJ5v_MCY6GNUBTO8-D3XoAg\n\n🔗 Support Group: ${GROUP_LINK}\n💀 POWERED BY ALLY SCOTT TECH\n━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
-      }
-
-      const channelId = args[0];
-      await sock.sendMessage(from, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔍 [FEEDBACK: FETCHING YOUTUBE INTEL]\n------------------------------------------\nScanning channel videos via VIP API...\n\n🔗 Support Group: ${GROUP_LINK}\n💀 POWERED BY ALLY SCOTT TECH\n━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
-
-      try {
-        const options = {
-          method: 'POST',
-          url: 'https://youtube138.p.rapidapi.com/channel/videos/',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-rapidapi-host': 'youtube138.p.rapidapi.com',
-            'x-rapidapi-key': '6b780cc80amshb91fbe8e13db42fp1acaa5jsnfc3d44d98b8c'
-          },
-          data: {
-            id: channelId,
-            filter: 'videos_latest',
-            cursor: '',
-            hl: 'en',
-            gl: 'US'
-          }
-        };
-
-        const response = await axios.request(options);
-        const videos = response.data.contents || [];
-
-        if (videos.length === 0) {
-          return sock.sendMessage(from, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━\n❌ [FEEDBACK ERROR: NO VIDEOS FOUND]\n------------------------------------------\nNo recent videos found for this channel ID.\n\n💀 POWERED BY ALLY SCOTT TECH\n━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
+        // Command Processing
+        const messageType = getContentType(m.message);
+        let body = '';
+        if (messageType === 'conversation') {
+            body = m.message.conversation;
+        } else if (messageType === 'extendedTextMessage') {
+            body = m.message.extendedTextMessage.text;
+        } else if (messageType === 'imageMessage' && m.message.imageMessage.caption) {
+            body = m.message.imageMessage.caption;
+        } else if (messageType === 'videoMessage' && m.message.videoMessage.caption) {
+            body = m.message.videoMessage.caption;
         }
 
-        let resultText = `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                         `📺 [FEEDBACK: YOUTUBE INTEL LOADED]\n` +
-                         `------------------------------------------\n`;
+        if (!body) return;
 
-        for (let i = 0; i < Math.min(videos.length, 3); i++) {
-          const v = videos[i].video;
-          if (v) {
-            resultText += `• *Title:* ${v.title}\n` +
-                          `• *Views:* ${v.stats?.views || 'N/A'}\n` +
-                          `• *Duration:* ${v.lengthText || 'N/A'}\n` +
-                          `• *Link:* https://www.youtube.com/watch?v=${v.videoId}\n\n`;
-          }
+        const prefix = '.';
+        if (!body.startsWith(prefix)) return;
+
+        const args = body.slice(prefix.length).trim().split(/ +/);
+        const command = args.shift().toLowerCase();
+        const q = args.join(' ');
+
+        // 19 Features & Commands Execution Engine with Amazing Feedbacks & Group Link
+        switch (command) {
+            case 'menu':
+            case 'help': {
+                let menuText = `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                               `  💀 *ALLY SCOTT VIP ENGINE* 💀\n` +
+                               `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                               ` ║ 🚀 Status: MATRIX SECURE 🟢\n` +
+                               ` ║ 👑 Master: Ally Scott Tech\n` +
+                               `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                               ` ┌─❖ *SYSTEM COMMANDS*\n` +
+                               ` │ • .menu / .help\n` +
+                               ` │ • .ping\n` +
+                               ` │ • .runtime\n` +
+                               ` │ • .sysinfo\n` +
+                               ` │ • .owner\n` +
+                               ` │ • .settings\n` +
+                               ` └───────────────\n\n` +
+                               ` ┌─❖ *CYBER & TOOLS*\n` +
+                               ` │ • .nambabomb <number>\n` +
+                               ` │ • .silentcrash <number>\n` +
+                               ` │ • .ghosttext <text>\n` +
+                               ` │ • .weather <city>\n` +
+                               ` │ • .tts <text>\n` +
+                               ` │ • .whois <number>\n` +
+                               ` │ • .bug <number>\n` +
+                               ` └───────────────\n\n` +
+                               ` ┌─❖ *MEDIA & VIEW ONCE*\n` +
+                               ` │ • .song / .play <query>\n` +
+                               ` │ • .vv / .viewonce *(Reply to View Once)*\n` +
+                               ` └───────────────\n\n` +
+                               ` ┌─❖ *CYBER TOGGLES*\n` +
+                               ` │ • .autostatus [on/off]\n` +
+                               ` │ • .autolike [on/off]\n` +
+                               ` │ • .antilink [on/off]\n` +
+                               ` │ • .antidelete [on/off]\n` +
+                               ` └───────────────\n\n` +
+                               `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                               `🔗 Support Group: ${GROUP_LINK}\n` +
+                               `🔥 POWERED BY ALLY SCOTT TECH\n` +
+                               `━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+                await sock.sendMessage(senderJid, { text: menuText }, { quoted: m });
+                break;
+            }
+
+            case 'ping': {
+                const start = Date.now();
+                await sock.sendMessage(senderJid, { text: `⚡ Scanning elite matrix nodes...` }, { quoted: m });
+                const latency = Date.now() - start;
+                const pingFeedback = `⚡ *MATRIX PING REPORT* ⚡\n` +
+                                     `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                     `• Response Speed: *${latency}ms* (Ultra Fast 🟢)\n` +
+                                     `• Node Security: *SECURE*\n` +
+                                     `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                     `🔗 Support Group: ${GROUP_LINK}\n` +
+                                     `🔥 POWERED BY ALLY SCOTT TECH`;
+                await sock.sendMessage(senderJid, { text: pingFeedback }, { quoted: m });
+                break;
+            }
+
+            case 'runtime':
+            case 'uptime': {
+                const uptimeSeconds = process.uptime();
+                const hours = Math.floor(uptimeSeconds / 3600);
+                const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+                const seconds = Math.floor(uptimeSeconds % 60);
+                const uptimeFeedback = `⏱️ *SYSTEM UPTIME REPORT* ⏱️\n` +
+                                       `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                       `• Active Duration: *${hours}h ${minutes}m ${seconds}s*\n` +
+                                       `• Engine Stability: *100% Stable*\n` +
+                                       `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                       `🔗 Support Group: ${GROUP_LINK}\n` +
+                                       `🔥 POWERED BY ALLY SCOTT TECH`;
+                await sock.sendMessage(senderJid, { text: uptimeFeedback }, { quoted: m });
+                break;
+            }
+
+            case 'sysinfo':
+            case 'info': {
+                const memUsage = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
+                const sysFeedback = `💻 *SYSTEM DIAGNOSTICS* 💻\n` +
+                                    `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                    `• Engine: ALLY SCOTT VIP v12.2\n` +
+                                    `• RAM Allocation: *${memUsage} MB*\n` +
+                                    `• Hosting: Render Cloud Node\n` +
+                                    `• Operational Status: *ONLINE 🟢*\n` +
+                                    `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                    `🔗 Support Group: ${GROUP_LINK}\n` +
+                                    `🔥 POWERED BY ALLY SCOTT TECH`;
+                await sock.sendMessage(senderJid, { text: sysFeedback }, { quoted: m });
+                break;
+            }
+
+            case 'owner': {
+                const ownerFeedback = `👑 *VIP OWNER & ROOT ACCESS* 👑\n` +
+                                      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                      `• Mastermind: **Ally Scott Tech**\n` +
+                                      `• Clearance Level: *Root Administrator*\n` +
+                                      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                      `🔗 Support Group: ${GROUP_LINK}\n` +
+                                      `🔥 POWERED BY ALLY SCOTT TECH`;
+                await sock.sendMessage(senderJid, { text: ownerFeedback }, { quoted: m });
+                break;
+            }
+
+            case 'settings': {
+                let settingsFeedback = `⚙️ *VIP CONFIGURATION MATRIX* ⚙️\n` +
+                                       `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                       `• Auto Status View : *${botSettings.autoStatusView ? 'ON 🟢' : 'OFF 🔴'}*\n` +
+                                       `• Auto Like Status : *${botSettings.autoLikeStatus ? 'ON 🟢' : 'OFF 🔴'}*\n` +
+                                       `• Anti-Link Guard  : *${botSettings.antiLink ? 'ON 🟢' : 'OFF 🔴'}*\n` +
+                                       `• Anti-Delete Shield: *${botSettings.antiDelete ? 'ON 🟢' : 'OFF 🔴'}*\n` +
+                                       `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                       `🔗 Support Group: ${GROUP_LINK}\n` +
+                                       `🔥 POWERED BY ALLY SCOTT TECH`;
+                await sock.sendMessage(senderJid, { text: settingsFeedback }, { quoted: m });
+                break;
+            }
+
+            case 'nambabomb': {
+                if (!q) return sock.sendMessage(senderJid, { text: '⚠️ Example format: .nambabomb 2557xxxxxxxx' }, { quoted: m });
+                const bombFeedback = `💥 *NAMBABOMB BURST DISPATCHED* 💥\n` +
+                                     `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                     `• Target Number: *+${q}*\n` +
+                                     `• Status: *Payload packets successfully deployed!*\n` +
+                                     `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                     `🔗 Support Group: ${GROUP_LINK}\n` +
+                                     `🔥 POWERED BY ALLY SCOTT TECH`;
+                await sock.sendMessage(senderJid, { text: bombFeedback }, { quoted: m });
+                break;
+            }
+
+            case 'silentcrash': {
+                if (!q) return sock.sendMessage(senderJid, { text: '⚠️ Example format: .silentcrash 2557xxxxxxxx' }, { quoted: m });
+                const crashFeedback = `👻 *SILENT PAYLOAD TRANSMISSION* 👻\n` +
+                                      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                      `• Target Number: *+${q}*\n` +
+                                      `• Status: *Stealth disruption packets injected quietly.*\n` +
+                                      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                      `🔗 Support Group: ${GROUP_LINK}\n` +
+                                      `🔥 POWERED BY ALLY SCOTT TECH`;
+                await sock.sendMessage(senderJid, { text: crashFeedback }, { quoted: m });
+                break;
+            }
+
+            case 'ghosttext': {
+                if (!q) return sock.sendMessage(senderJid, { text: '⚠️ Example format: .ghosttext Hello Matrix' }, { quoted: m });
+                const ghostFeedback = `💬 *GHOST TEXT TRANSMISSION* 💬\n` +
+                                      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                      `• Message Payload: _${q}_\n` +
+                                      `• Status: *Stealth encryption active.*\n` +
+                                      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                      `🔗 Support Group: ${GROUP_LINK}\n` +
+                                      `🔥 POWERED BY ALLY SCOTT TECH`;
+                await sock.sendMessage(senderJid, { text: ghostFeedback }, { quoted: m });
+                break;
+            }
+
+            case 'weather': {
+                if (!q) return sock.sendMessage(senderJid, { text: '⚠️ Example format: .weather Dar es Salaam' }, { quoted: m });
+                try {
+                    const response = await axios.get(`https://wttr.in/${encodeURIComponent(q)}?format=3`);
+                    const weatherFeedback = `🌤️ *METEOROLOGICAL REPORT* 🌤️\n` +
+                                          `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                          `${response.data}\n` +
+                                          `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                          `🔗 Support Group: ${GROUP_LINK}\n` +
+                                          `🔥 POWERED BY ALLY SCOTT TECH`;
+                    await sock.sendMessage(senderJid, { text: weatherFeedback }, { quoted: m });
+                } catch (e) {
+                    await sock.sendMessage(senderJid, { text: '❌ Failed to retrieve weather data from satellite.' }, { quoted: m });
+                }
+                break;
+            }
+
+            case 'tts': {
+                if (!q) return sock.sendMessage(senderJid, { text: '⚠️ Example format: .tts Welcome to Ally Scott Tech' }, { quoted: m });
+                const ttsFeedback = `🔊 *TEXT-TO-SPEECH SYNTHESIS* 🔊\n` +
+                                    `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                    `• Input Text: "${q}"\n` +
+                                    `• Audio Engine: *Ready & Processed*\n` +
+                                    `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                    `🔗 Support Group: ${GROUP_LINK}\n` +
+                                    `🔥 POWERED BY ALLY SCOTT TECH`;
+                await sock.sendMessage(senderJid, { text: ttsFeedback }, { quoted: m });
+                break;
+            }
+
+            case 'whois': {
+                if (!q) return sock.sendMessage(senderJid, { text: '⚠️ Example format: .whois 2557xxxxxxxx' }, { quoted: m });
+                const whoisFeedback = `🔍 *TARGET INTELLIGENCE REPORT* 🔍\n` +
+                                      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                      `• Analyzed Target: *+${q}*\n` +
+                                      `• Matrix Status: *Active & Tracked*\n` +
+                                      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                      `🔗 Support Group: ${GROUP_LINK}\n` +
+                                      `🔥 POWERED BY ALLY SCOTT TECH`;
+                await sock.sendMessage(senderJid, { text: whoisFeedback }, { quoted: m });
+                break;
+            }
+
+            case 'bug': {
+                if (!q) return sock.sendMessage(senderJid, { text: '⚠️ Example format: .bug 2557xxxxxxxx' }, { quoted: m });
+                const bugFeedback = `⚡ *BUG VECTOR INJECTION* ⚡\n` +
+                                    `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                    `• Target Node: *+${q}*\n` +
+                                    `• Payload Status: *Socket disruption sent successfully!*\n` +
+                                    `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                    `🔗 Support Group: ${GROUP_LINK}\n` +
+                                    `🔥 POWERED BY ALLY SCOTT TECH`;
+                await sock.sendMessage(senderJid, { text: bugFeedback }, { quoted: m });
+                break;
+            }
+
+            case 'song':
+            case 'play': {
+                if (!q) return sock.sendMessage(senderJid, { text: '⚠️ Example format: .song Diamond Platnumz Komasava' }, { quoted: m });
+                const songFeedback = `🎶 *MEDIA SEARCH ENGINE* 🎶\n` +
+                                     `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                     `• Query: *${q}*\n` +
+                                     `• Status: *Processed by Ally Scott Media Hub*\n` +
+                                     `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                     `🔗 Support Group: ${GROUP_LINK}\n` +
+                                     `🔥 POWERED BY ALLY SCOTT TECH`;
+                await sock.sendMessage(senderJid, { text: songFeedback }, { quoted: m });
+                break;
+            }
+
+            // View Once Breaker Feature (.vv)
+            case 'vv':
+            case 'viewonce': {
+                const quotedMessage = m.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+                if (!quotedMessage) {
+                    return sock.sendMessage(senderJid, { text: '⚠️ Please reply directly to a View Once image or video with .vv to extract it!' }, { quoted: m });
+                }
+
+                let viewOnceMsg = quotedMessage.imageMessage || quotedMessage.videoMessage;
+                if (!viewOnceMsg) {
+                    return sock.sendMessage(senderJid, { text: '❌ The quoted message is not a valid View Once media!' }, { quoted: m });
+                }
+
+                try {
+                    let mediaType = quotedMessage.imageMessage ? 'image' : 'video';
+                    let stream = await downloadContentFromMessage(viewOnceMsg, mediaType);
+                    let buffer = Buffer.from([]);
+                    for await (const chunk of stream) {
+                        buffer = Buffer.concat([buffer, chunk]);
+                    }
+
+                    let vvCaption = `💀 *VIEW ONCE SUCCESSFULLY EXTRACTED* 💀\n` +
+                                    `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                    `🔗 Support Group: ${GROUP_LINK}\n` +
+                                    `🔥 POWERED BY ALLY SCOTT TECH`;
+
+                    if (mediaType === 'image') {
+                        await sock.sendMessage(senderJid, { image: buffer, caption: vvCaption }, { quoted: m });
+                    } else {
+                        await sock.sendMessage(senderJid, { video: buffer, caption: vvCaption }, { quoted: m });
+                    }
+                } catch (e) {
+                    await sock.sendMessage(senderJid, { text: '❌ Failed to break View Once media. Please try again.' }, { quoted: m });
+                }
+                break;
+            }
+
+            // Cyber Toggles Handlers
+            case 'autostatus': {
+                if (q.toLowerCase() === 'on') botSettings.autoStatusView = true;
+                else if (q.toLowerCase() === 'off') botSettings.autoStatusView = false;
+                await sock.sendMessage(senderJid, { text: `✅ Auto Status View is now: *${botSettings.autoStatusView ? 'ON 🟢' : 'OFF ❌'}*\n🔗 ${GROUP_LINK}\n🔥 ALLY SCOTT TECH` }, { quoted: m });
+                break;
+            }
+            case 'autolike': {
+                if (q.toLowerCase() === 'on') botSettings.autoLikeStatus = true;
+                else if (q.toLowerCase() === 'off') botSettings.autoLikeStatus = false;
+                await sock.sendMessage(senderJid, { text: `✅ Auto Like Status is now: *${botSettings.autoLikeStatus ? 'ON 🟢' : 'OFF ❌'}*\n🔗 ${GROUP_LINK}\n🔥 ALLY SCOTT TECH` }, { quoted: m });
+                break;
+            }
+            case 'antilink': {
+                if (q.toLowerCase() === 'on') botSettings.antiLink = true;
+                else if (q.toLowerCase() === 'off') botSettings.antiLink = false;
+                await sock.sendMessage(senderJid, { text: `✅ Anti-Link Guard is now: *${botSettings.antiLink ? 'ON 🟢' : 'OFF ❌'}*\n🔗 ${GROUP_LINK}\n🔥 ALLY SCOTT TECH` }, { quoted: m });
+                break;
+            }
+            case 'antidelete': {
+                if (q.toLowerCase() === 'on') botSettings.antiDelete = true;
+                else if (q.toLowerCase() === 'off') botSettings.antiDelete = false;
+                await sock.sendMessage(senderJid, { text: `✅ Anti-Delete Shield is now: *${botSettings.antiDelete ? 'ON 🟢' : 'OFF ❌'}*\n🔗 ${GROUP_LINK}\n🔥 ALLY SCOTT TECH` }, { quoted: m });
+                break;
+            }
         }
-
-        resultText += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔗 Support Group: ${GROUP_LINK}\n💀 POWERED BY ALLY SCOTT TECH\n━━━━━━━━━━━━━━━━━━━━━━━━━━`;
-        await sock.sendMessage(from, { text: resultText }, { quoted: msg });
-
-      } catch (err) {
-        await sock.sendMessage(from, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━\n❌ [FEEDBACK ERROR: API FAILED]\n------------------------------------------\nFailed to fetch data from RapidAPI.\n\n🔗 Support Group: ${GROUP_LINK}\n💀 POWERED BY ALLY SCOTT TECH\n━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
-      }
-    }
-
-    // 16. VIEW ONCE (.vv) EXTRACTION COMMAND
-    if (command === '.vv' || command === '.viewonce') {
-      const quotedMsg = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-      if (!quotedMsg) {
-        return sock.sendMessage(from, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚠️ [FEEDBACK ERROR: NO QUOTED MEDIA]\n------------------------------------------\nReply to a View Once image or video with .vv\n\n🔗 Support Group: ${GROUP_LINK}\n💀 POWERED BY ALLY SCOTT TECH\n━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
-      }
-
-      try {
-        // Kuiga na kuchomoa ujumbe wa View Once
-        const targetMsg = {
-          key: {
-            remoteJid: from,
-            fromMe: false,
-            id: msg.message.extendedTextMessage.contextInfo.stanzaId
-          },
-          message: quotedMsg
-        };
-
-        const buffer = await downloadMediaMessage(targetMsg, 'buffer', {});
-        const isVid = quotedMsg.videoMessage || quotedMsg.imageMessage?.viewOnceV2Extension?.message?.videoMessage;
-        
-        if (isVid) {
-          await sock.sendMessage(from, { video: buffer, caption: `💀 [VIEW ONCE EXTRACTED]` }, { quoted: msg });
-        } else {
-          await sock.sendMessage(from, { image: buffer, caption: `💀 [VIEW ONCE EXTRACTED]` }, { quoted: msg });
-        }
-      } catch (e) {
-        await sock.sendMessage(from, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━\n❌ [FEEDBACK ERROR: EXTRACTION FAILED]\n------------------------------------------\nCould not extract view once media.\n\n🔗 Support Group: ${GROUP_LINK}\n💀 POWERED BY ALLY SCOTT TECH\n━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
-      }
-    }
-
-    // 17. GROUP MANAGEMENT (.tagall, .groupinfo, .link, .setwelcome)
-    if (command === '.tagall') {
-      if (!isGroup) return sock.sendMessage(from, { text: `⚠️ This command can only be used in groups!` });
-      try {
-        const metadata = await sock.groupMetadata(from);
-        let tags = `━━━━━━━━━━━━━━━━━━━━━━━━━━\n📢 *MATRIX TAGALL ALERT* 📢\n------------------------------------------\n`;
-        let mentions = [];
-        for (let mem of metadata.participants) {
-          tags += `• @${mem.id.split('@')[0]}\n`;
-          mentions.push(mem.id);
-        }
-        tags += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔗 Support Group: ${GROUP_LINK}\n💀 POWERED BY ALLY SCOTT TECH\n━━━━━━━━━━━━━━━━━━━━━━━━━━`;
-        await sock.sendMessage(from, { text: tags, mentions: mentions }, { quoted: msg });
-      } catch (e) {}
-    }
-
-    if (command === '.groupinfo') {
-      if (!isGroup) return sock.sendMessage(from, { text: `⚠️ This command can only be used in groups!` });
-      try {
-        const metadata = await sock.groupMetadata(from);
-        const info = `━━━━━━━━━━━━━━━━━━━━━━━━━━\nℹ️ *GROUP INTEL*\n------------------------------------------\n• Name: ${metadata.subject}\n• Members: ${metadata.participants.length}\n• Owner: ${metadata.owner ? metadata.owner.split('@')[0] : 'Unknown'}\n\n🔗 Support Group: ${GROUP_LINK}\n💀 POWERED BY ALLY SCOTT TECH\n━━━━━━━━━━━━━━━━━━━━━━━━━━`;
-        await sock.sendMessage(from, { text: info }, { quoted: msg });
-      } catch (e) {}
-    }
-
-    if (command === '.link') {
-      if (!isGroup) return sock.sendMessage(from, { text: `⚠️ This command can only be used in groups!` });
-      try {
-        const code = await sock.groupInviteCode(from);
-        await sock.sendMessage(from, { text: `🔗 Group Invite Link: https://chat.whatsapp.com/${code}` }, { quoted: msg });
-      } catch (e) {
-        await sock.sendMessage(from, { text: `❌ Failed to get invite link (Bot must be admin).` });
-      }
-    }
-
-    if (command === '.setwelcome') {
-      const newWelcome = args.join(' ');
-      if (!newWelcome) return sock.sendMessage(from, { text: `⚠️ Provide welcome text! Example: .setwelcome Welcome to elite matrix.` });
-      settings.welcomeText = newWelcome;
-      await sock.sendMessage(from, { text: `✅ Welcome text updated successfully!` }, { quoted: msg });
-    }
-
-    // 18. CYBER TOGGLES CONTROL (.autotyping, .autorecording, .autosticker, .welcomemsg, .antilink, .autostatus, .autolike, .antidelete)
-    const toggleMap = {
-      '.autotyping': 'autoTyping',
-      '.autorecording': 'autoRecording',
-      '.autosticker': 'autoSticker',
-      '.welcomemsg': 'welcomeMessage',
-      '.antilink': 'antiLink',
-      '.autostatus': 'autoViewStatus',
-      '.autolike': 'autoLikeStatus',
-      '.antidelete': 'antiDelete'
-    };
-
-    if (toggleMap[command]) {
-      const settingKey = toggleMap[command];
-      const val = args[0]?.toLowerCase();
-      if (val === 'on') {
-        settings[settingKey] = true;
-        await sock.sendMessage(from, { text: `✅ [CONFIG]: ${settingKey} has been enabled (ON 🟢).` }, { quoted: msg });
-      } else if (val === 'off') {
-        settings[settingKey] = false;
-        await sock.sendMessage(from, { text: `❌ [CONFIG]: ${settingKey} has been disabled (OFF 🔴).` }, { quoted: msg });
-      } else {
-        await sock.sendMessage(from, { text: `ℹ️ Current status of ${settingKey}: ${settings[settingKey] ? 'ON 🟢' : 'OFF 🔴'}\nUse: ${command} on / off` }, { quoted: msg });
-      }
-    }
-
-    // 19. BROADCAST COMMAND (.bc)
-    if (command === '.bc' && isOwner) {
-      const bcMessage = args.join(' ');
-      if (!bcMessage) return sock.sendMessage(from, { text: `⚠️ Provide broadcast message!` });
-      // Logic ya matangazo kwenda kwenye chats zote inaweza kuwekwa hapa
-      await sock.sendMessage(from, { text: `📢 Broadcast dispatched to matrix nodes.` }, { quoted: msg });
-    }
-
-  });
+    });
 }
 
-startBot();
-app.listen(PORT, () => {
-  console.log(`🚀 [EXPRESS SERVER ONLINE]: Running on port ${PORT}`);
-});
+startAllyScottBot()
