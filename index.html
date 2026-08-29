@@ -3,103 +3,145 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ALLY SCOTT VIP ENGINE | WEB PAIRING</title>
+    <title>ALLY SCOTT VIP ENGINE | TOXIC EDITION</title>
     <style>
         body {
-            background-color: #0b0f19;
-            color: #00ff66;
+            background-color: #030805;
+            color: #00ff41;
             font-family: 'Courier New', Courier, monospace;
             text-align: center;
-            padding: 30px;
+            padding: 20px;
             display: flex;
             justify-content: center;
             align-items: center;
             height: 100vh;
             margin: 0;
+            background-image: radial-gradient(circle, #0a2612 0%, #030805 90%);
         }
         .container {
-            border: 2px solid #00ff66;
+            border: 2px solid #00ff41;
             padding: 30px;
             max-width: 450px;
             width: 100%;
-            box-shadow: 0 0 25px rgba(0, 255, 102, 0.3);
-            background: #111827;
-            border-radius: 10px;
+            box-shadow: 0 0 30px rgba(0, 255, 65, 0.4);
+            background: #051008;
+            border-radius: 12px;
+            position: relative;
+            overflow: hidden;
+        }
+        .container::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(90deg, transparent, #00ff41, transparent);
+            animation: scan 2s linear infinite;
+        }
+        @keyframes scan {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
         }
         h1 {
-            color: #fff;
-            text-shadow: 0 0 10px #00ff66;
+            color: #adff2f;
+            text-shadow: 0 0 12px #00ff41;
             font-size: 22px;
             margin-bottom: 10px;
+            letter-spacing: 2px;
         }
         p {
-            color: #9ca3af;
-            font-size: 14px;
+            color: #859f8c;
+            font-size: 13px;
             margin-bottom: 20px;
         }
         input {
             width: 90%;
             padding: 12px;
             margin: 10px 0;
-            background: #030712;
-            border: 1px solid #00ff66;
-            color: #00ff66;
+            background: #020503;
+            border: 1px solid #00ff41;
+            color: #00ff41;
             text-align: center;
             font-size: 16px;
-            border-radius: 5px;
+            border-radius: 6px;
             outline: none;
+            letter-spacing: 1px;
         }
         input::placeholder {
-            color: #374151;
+            color: #1b4d25;
         }
         button {
-            background: #00ff66;
-            color: #000;
+            background: #00ff41;
+            color: #030805;
             padding: 12px 25px;
             font-weight: bold;
             border: none;
             cursor: pointer;
-            border-radius: 5px;
+            border-radius: 6px;
             font-size: 15px;
             width: 95%;
             margin-top: 10px;
             transition: 0.3s;
+            box-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
         }
         button:hover {
-            background: #00cc52;
-            box-shadow: 0 0 15px #00ff66;
+            background: #00cc33;
+            box-shadow: 0 0 20px #00ff41;
+            transform: scale(1.02);
         }
         #result-box {
             margin-top: 20px;
             padding: 15px;
-            background: #030712;
-            border: 1px dashed #00ff66;
+            background: #020503;
+            border: 1px dashed #00ff41;
             display: none;
-            border-radius: 5px;
+            border-radius: 6px;
         }
         .code-display {
             font-size: 26px;
-            color: #fff;
+            color: #adff2f;
             font-weight: bold;
-            letter-spacing: 3px;
-            margin-top: 10px;
-            text-shadow: 0 0 10px #00ff66;
+            letter-spacing: 4px;
+            margin-top: 8px;
+            text-shadow: 0 0 15px #00ff41;
+        }
+        .copy-btn {
+            background: #113318;
+            color: #00ff41;
+            border: 1px solid #00ff41;
+            padding: 8px 15px;
+            font-size: 12px;
+            margin-top: 12px;
+            width: auto;
+            display: inline-block;
+            cursor: pointer;
+            border-radius: 4px;
+            font-weight: bold;
+            transition: 0.2s;
+        }
+        .copy-btn:hover {
+            background: #00ff41;
+            color: #030805;
+            box-shadow: 0 0 10px #00ff41;
         }
         .badge {
-            background: #00ff66;
-            color: #000;
-            padding: 5px 10px;
+            background: #00ff41;
+            color: #030805;
+            padding: 6px 12px;
             font-weight: bold;
             display: inline-block;
             margin-top: 20px;
             font-size: 11px;
-            border-radius: 3px;
+            border-radius: 4px;
+            letter-spacing: 1px;
+            box-shadow: 0 0 10px rgba(0, 255, 65, 0.4);
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>💀 ALLY SCOTT WEB PAIRING 💀</h1>
+        <h1>☣️ TOXIC VIP ENGINE ☣️</h1>
         <p>Enter your WhatsApp number with country code (e.g., 2557xxxxxxxx) to generate your linking code.</p>
         
         <div id="form-section">
@@ -109,9 +151,10 @@
         </div>
 
         <div id="result-box">
-            <p style="margin: 0; color: #9ca3af;">Your Pairing Code:</p>
+            <p style="margin: 0; color: #859f8c; font-size: 12px;">Your Toxic Pairing Code:</p>
             <div class="code-display" id="pairing-code">---</div>
-            <p style="font-size: 11px; margin-top: 10px; color: #00ff66;">Copy this code and link it on your WhatsApp Linked Devices!</p>
+            <button class="copy-btn" onclick="copyCode()">📋 COPY CODE</button>
+            <p style="font-size: 10px; margin-top: 10px; color: #00ff41;">Paste this code into WhatsApp Linked Devices!</p>
         </div>
 
         <div class="badge">POWERED BY ALLY SCOTT TECH</div>
@@ -120,7 +163,7 @@
     <script>
         async function requestPairingCode() {
             const phone = document.getElementById('phone').value.trim();
-            const btn = document.querySelector('button');
+            const btn = document.querySelector('#form-section button');
             const resultBox = document.getElementById('result-box');
             const codeDisplay = document.getElementById('pairing-code');
 
@@ -129,7 +172,7 @@
                 return;
             }
 
-            btn.innerText = 'REQUESTING CODE...';
+            btn.innerText = 'GENERATING TOXIC CODE...';
             btn.disabled = true;
 
             try {
@@ -150,6 +193,21 @@
                 btn.innerText = 'GET PAIRING CODE';
                 btn.disabled = false;
             }
+        }
+
+        function copyCode() {
+            const codeText = document.getElementById('pairing-code').innerText;
+            if (codeText === '---' || !codeText) return;
+            
+            navigator.clipboard.writeText(codeText).then(() => {
+                const copyBtn = document.querySelector('.copy-btn');
+                copyBtn.innerText = 'COPIED! ✅';
+                setTimeout(() => {
+                    copyBtn.innerText = '📋 COPY CODE';
+                }, 2000);
+            }).catch(err => {
+                alert('Failed to copy code.');
+            });
         }
     </script>
 </body>
