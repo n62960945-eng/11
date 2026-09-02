@@ -1043,11 +1043,7 @@ async function startBot() {
 
             printQRInTerminal: false,
 
-            browser: [
-                "Ally Scott",
-                "Chrome",
-                "1.0.0"
-            ],
+            browser: ["Ubuntu", "Chrome", "20.0.0"],
 
             generateHighQualityLinkPreview: true
         });
