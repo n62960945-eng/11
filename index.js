@@ -21,6 +21,9 @@ const {
     fetchLatestBaileysVersion
 } = require("@whiskeysockets/baileys");
 
+const P = require("pino");
+const OpenAI = require("openai");
+
 /* =========================================================
    ALLY SCOTT CONFIGURATION
 ========================================================= */
