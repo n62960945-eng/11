@@ -1,16 +1,18 @@
 {
-  "name": "ally-scott-hacker-bot",
-  "version": "12.2.0",
-  "description": "Elite WhatsApp Bot Powered by Ally Scott Tech",
+  "name": "ally-scott-whatsapp-ai",
+  "version": "1.0.0",
+  "description": "Ally Scott Advanced WhatsApp AI Medical Assistant",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
-    "@hapi/boom": "^10.0.1",
-    "@whiskeysockets/baileys": "^6.7.0",
-    "axios": "^1.6.8",
-    "express": "^4.19.2",
-    "pino": "^9.0.0"
+    "@whiskeysockets/baileys": "latest",
+    "dotenv": "latest",
+    "openai": "latest",
+    "pino": "latest"
   }
 }
