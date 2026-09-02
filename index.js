@@ -1,573 +1,1256 @@
-/**
- * ALLY SCOTT VIP ENGINE - MULTI-DEVICE WHATSAPP BOT
- * Powered by Ally Scott Tech
- */
+require("dotenv").config();
 
 const {
     default: makeWASocket,
     useMultiFileAuthState,
     DisconnectReason,
-    fetchLatestBaileysVersion,
-    getContentType,
-    downloadContentFromMessage
-} = require('@whiskeysockets/baileys');
-const { Boom } = require('@hapi/boom');
-const pino = require('pino');
-const fs = require('fs');
-const path = require('path');
-const axios = require('axios');
-const express = require('express');
+    fetchLatestBaileysVersion
+} = require("@whiskeysockets/baileys");
 
-// Express Server for Web Pairing & Render Uptime
-const app = express();
-const PORT = process.env.PORT || 10000;
+const P = require("pino");
+const OpenAI = require("openai");
 
-const GROUP_LINK = "https://chat.whatsapp.com/GKlxbFDAh8t1CDXQArhJle";
+const BOT_NAME = "Ally Scott";
+const FOOTER = "Powered by Scott OpenAI | Ally Scott";
 
-let globalSock = null;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.6";
+const PHONE_NUMBER = process.env.PHONE_NUMBER;
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// Serve HTML file for pairing
-app.get('/', (req, res) => {
-    const htmlPath = path.join(__dirname, 'index.html');
-    if (fs.existsSync(htmlPath)) {
-        res.sendFile(htmlPath);
-    } else {
-        res.send('<html><body style="background:#030805;color:#00ff41;font-family:monospace;text-align:center;padding:50px;"><h1>TOXIC VIP ENGINE ACTIVE</h1><p>index.html not found, but server is running!</p></body></html>');
-    }
-});
-
-// API endpoint to fetch pairing code via web
-app.get('/get-code', async (req, res) => {
-    const phoneNumber = req.query.phone;
-    if (!phoneNumber) {
-        return res.json({ success: false, error: 'Phone number is required!' });
-    }
-    
-    if (!globalSock) {
-        return res.json({ success: false, error: 'Bot session is initializing, please wait 10 seconds and try again.' });
-    }
-
-    try {
-        let cleanNumber = phoneNumber.replace(/[^0-9]/g, '');
-        if (!globalSock.authState.creds.registered) {
-            let code = await globalSock.requestPairingCode(cleanNumber);
-            code = code?.match(/.{1,4}/g)?.join('-') || code;
-            return res.json({ success: true, code: code });
-        } else {
-            return res.json({ success: false, error: 'Bot is already connected and registered!' });
-        }
-    } catch (err) {
-        return res.json({ success: false, error: err.message || 'Failed to generate pairing code.' });
-    }
-});
-
-app.listen(PORT, () => {
-    console.log(`[SERVER] Ally Scott Web Engine running on port ${PORT}`);
-});
-
-// Bot Settings State
-const botSettings = {
-    autoStatusView: true,
-    autoLikeStatus: true,
-    antiLink: true,
-    antiDelete: true
-};
-
-async function startAllyScottBot() {
-    const { state, saveCreds } = await useMultiFileAuthState('./session');
-    const { version } = await fetchLatestBaileysVersion();
-
-    const sock = makeWASocket({
-        version,
-        logger: pino({ level: 'silent' }),
-        printQRInTerminal: false,
-        auth: state,
-        browser: ["Windows", "Chrome", "122.0.0.0"]
-    });
-
-    globalSock = sock;
-
-    sock.ev.on('creds.update', saveCreds);
-
-    sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect } = update;
-        if (connection === 'close') {
-            const reason = new Boom(lastDisconnect?.error)?.output.statusCode;
-            console.log('[DISCONNECT] Reason:', reason);
-            if (reason !== DisconnectReason.loggedOut) {
-                startAllyScottBot();
-            } else {
-                console.log('[LOGGED OUT] Session deleted. Please restart.');
-                if (fs.existsSync('./session')) fs.rmSync('./session', { recursive: true, force: true });
-                startAllyScottBot();
-            }
-        } else if (connection === 'open') {
-            console.log('[CONNECTED] Ally Scott VIP Engine is fully online & operational! 🚀');
-        }
-    });
-
-    // Auto Status View & Like Handler
-    sock.ev.on('messages.upsert', async ({ messages }) => {
-        const m = messages[0];
-        if (!m.message) return;
-
-        const senderJid = m.key.remoteJid;
-
-        // Auto Status View & Like
-        if (senderJid === 'status@broadcast') {
-            if (botSettings.autoStatusView) {
-                await sock.readMessages([m.key]);
-            }
-            if (botSettings.autoLikeStatus) {
-                try {
-                    await sock.sendMessage(senderJid, { react: { text: '💚', key: m.key } }, { statusJidList: [m.key.participant] });
-                } catch (e) {}
-            }
-            return;
-        }
-
-        // Anti-Delete Logger / Handler
-        if (m.message.protocolMessage && m.message.protocolMessage.type === 0) {
-            if (botSettings.antiDelete) {
-                console.log('[ANTI-DELETE] Message was deleted by user.');
-            }
-            return;
-        }
-
-        // Command Processing
-        const messageType = getContentType(m.message);
-        let body = '';
-        if (messageType === 'conversation') {
-            body = m.message.conversation;
-        } else if (messageType === 'extendedTextMessage') {
-            body = m.message.extendedTextMessage.text;
-        } else if (messageType === 'imageMessage' && m.message.imageMessage.caption) {
-            body = m.message.imageMessage.caption;
-        } else if (messageType === 'videoMessage' && m.message.videoMessage.caption) {
-            body = m.message.videoMessage.caption;
-        }
-
-        if (!body) return;
-
-        const prefix = '.';
-        if (!body.startsWith(prefix)) return;
-
-        const args = body.slice(prefix.length).trim().split(/ +/);
-        const command = args.shift().toLowerCase();
-        const q = args.join(' ');
-
-        // Heavy Unicode Generator Helper for Bug/Crash payloads
-        const getCrashUnicode = () => {
-            const base = "☣️ ALLY SCOTT MATRIX CRASH PAYLOAD ☣️\n";
-            let zalgo = "";
-            const chars = ["̶", "̴", "̷", "̳", "̲", "̱", "̲", "̢", "̢", "̛", "̖", "̗", "̘", "̙", "̜", "̝", "̞", "̟", "̠", "̤", "̥", "̦", "̩", "̪", "̫", "̬", "̭", "̮", "̯", "̰", "̱", "̲", "̳", "̹", "̺", "̻", "̼", "ͅ", "͇", "͈", "͉", "͍", "͎", "͏", "͐", "͑", "͒", "͓", "͔", "͕", "͖", "͗", "͘", "͙", "͚", "͛", "͜", "͝", "͞", "͟", "͠", "͡", "͢", "ͣ", "ͤ", "ͥ", "ͦ", "ͧ", "ͨ", "ͩ", "ͪ", "ͫ", "ͬ", "ͭ", "ͮ", "ͯ"];
-            for (let i = 0; i < 400; i++) {
-                zalgo += chars[Math.floor(Math.random() * chars.length)];
-            }
-            return base + zalgo + "\n[TARGET SOCKET DISRUPTED]";
-        };
-
-        // Commands Execution Engine
-        switch (command) {
-            case 'menu':
-            case 'help': {
-                let menuText = `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                               `  ☣️ *TOXIC VIP ENGINE* ☣️\n` +
-                               `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                               ` ║ 🚀 Status: MATRIX SECURE 🟢\n` +
-                               ` ║ 👑 Master: Ally Scott Tech\n` +
-                               `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                               ` ┌─❖ *SYSTEM COMMANDS*\n` +
-                               ` │ • .menu / .help\n` +
-                               ` │ • .ping\n` +
-                               ` │ • .runtime\n` +
-                               ` │ • .sysinfo\n` +
-                               ` │ • .owner\n` +
-                               ` │ • .settings\n` +
-                               ` └───────────────\n\n` +
-                               ` ┌─❖ *CYBER & TOOLS*\n` +
-                               ` │ • .nambabomb <number> *(Unicode Bomb)*\n` +
-                               ` │ • .silentcrash <number> *(Unicode Crash)*\n` +
-                               ` │ • .ghosttext <text>\n` +
-                               ` │ • .weather <city>\n` +
-                               ` │ • .tts <text>\n` +
-                               ` │ • .whois <number> *(Downloads DP)*\n` +
-                               ` │ • .bug <number> *(Unicode Payload)*\n` +
-                               ` └───────────────\n\n` +
-                               ` ┌─❖ *MEDIA & DOWNLOADS*\n` +
-                               ` │ • .song / .play <query> *(Downloads Audio)*\n` +
-                               ` │ • .vv / .viewonce *(Reply to View Once)*\n` +
-                               ` └───────────────\n\n` +
-                               ` ┌─❖ *CYBER TOGGLES*\n` +
-                               ` │ • .autostatus [on/off]\n` +
-                               ` │ • .autolike [on/off]\n` +
-                               ` │ • .antilink [on/off]\n` +
-                               ` │ • .antidelete [on/off]\n` +
-                               ` └───────────────\n\n` +
-                               `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                               `🔗 Support Group: ${GROUP_LINK}\n` +
-                               `🔥 POWERED BY ALLY SCOTT TECH\n` +
-                               `━━━━━━━━━━━━━━━━━━━━━━━━━━`;
-                await sock.sendMessage(senderJid, { text: menuText }, { quoted: m });
-                break;
-            }
-
-            case 'ping': {
-                const start = Date.now();
-                await sock.sendMessage(senderJid, { text: `⚡ Scanning elite matrix nodes...` }, { quoted: m });
-                const latency = Date.now() - start;
-                const pingFeedback = `⚡ *MATRIX PING REPORT* ⚡\n` +
-                                     `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                     `• Response Speed: *${latency}ms* (Ultra Fast 🟢)\n` +
-                                     `• Node Security: *SECURE*\n` +
-                                     `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                     `🔗 Support Group: ${GROUP_LINK}\n` +
-                                     `🔥 POWERED BY ALLY SCOTT TECH`;
-                await sock.sendMessage(senderJid, { text: pingFeedback }, { quoted: m });
-                break;
-            }
-
-            case 'runtime':
-            case 'uptime': {
-                const uptimeSeconds = process.uptime();
-                const hours = Math.floor(uptimeSeconds / 3600);
-                const minutes = Math.floor((uptimeSeconds % 3600) / 60);
-                const seconds = Math.floor(uptimeSeconds % 60);
-                const uptimeFeedback = `⏱️ *SYSTEM UPTIME REPORT* ⏱️\n` +
-                                       `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                       `• Active Duration: *${hours}h ${minutes}m ${seconds}s*\n` +
-                                       `• Engine Stability: *100% Stable*\n` +
-                                       `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                       `🔗 Support Group: ${GROUP_LINK}\n` +
-                                       `🔥 POWERED BY ALLY SCOTT TECH`;
-                await sock.sendMessage(senderJid, { text: uptimeFeedback }, { quoted: m });
-                break;
-            }
-
-            case 'sysinfo':
-            case 'info': {
-                const memUsage = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
-                const sysFeedback = `💻 *SYSTEM DIAGNOSTICS* 💻\n` +
-                                    `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                    `• Engine: TOXIC VIP v12.2\n` +
-                                    `• RAM Allocation: *${memUsage} MB*\n` +
-                                    `• Hosting: Render Cloud Node\n` +
-                                    `• Operational Status: *ONLINE 🟢*\n` +
-                                    `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                    `🔗 Support Group: ${GROUP_LINK}\n` +
-                                    `🔥 POWERED BY ALLY SCOTT TECH`;
-                await sock.sendMessage(senderJid, { text: sysFeedback }, { quoted: m });
-                break;
-            }
-
-            case 'owner': {
-                const ownerFeedback = `👑 *VIP OWNER & ROOT ACCESS* 👑\n` +
-                                      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                      `• Mastermind: **Ally Scott Tech**\n` +
-                                      `• Clearance Level: *Root Administrator*\n` +
-                                      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                      `🔗 Support Group: ${GROUP_LINK}\n` +
-                                      `🔥 POWERED BY ALLY SCOTT TECH`;
-                await sock.sendMessage(senderJid, { text: ownerFeedback }, { quoted: m });
-                break;
-            }
-
-            case 'settings': {
-                let settingsFeedback = `⚙️ *VIP CONFIGURATION MATRIX* ⚙️\n` +
-                                       `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                       `• Auto Status View : *${botSettings.autoStatusView ? 'ON 🟢' : 'OFF 🔴'}*\n` +
-                                       `• Auto Like Status : *${botSettings.autoLikeStatus ? 'ON 🟢' : 'OFF 🔴'}*\n` +
-                                       `• Anti-Link Guard  : *${botSettings.antiLink ? 'ON 🟢' : 'OFF 🔴'}*\n` +
-                                       `• Anti-Delete Shield: *${botSettings.antiDelete ? 'ON 🟢' : 'OFF 🔴'}*\n` +
-                                       `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                       `🔗 Support Group: ${GROUP_LINK}\n` +
-                                       `🔥 POWERED BY ALLY SCOTT TECH`;
-                await sock.sendMessage(senderJid, { text: settingsFeedback }, { quoted: m });
-                break;
-            }
-
-            case 'nambabomb': {
-                if (!q) return sock.sendMessage(senderJid, { text: '⚠️ Example format: .nambabomb 2557xxxxxxxx' }, { quoted: m });
-                let targetJid = q.replace(/[^0-9]/g, '') + '@s.whatsapp.net';
-                let unicodePayload = getCrashUnicode();
-                
-                try {
-                    await sock.sendMessage(targetJid, { text: unicodePayload });
-                    const bombFeedback = `💥 *NAMBABOMB UNICODE BURST* 💥\n` +
-                                         `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                         `• Target Number: *+${q.replace(/[^0-9]/g, '')}*\n` +
-                                         `• Payload Status: *Heavy Unicode payload successfully deployed!*\n` +
-                                         `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                         `🔗 Support Group: ${GROUP_LINK}\n` +
-                                         `🔥 POWERED BY ALLY SCOTT TECH`;
-                    await sock.sendMessage(senderJid, { text: bombFeedback }, { quoted: m });
-                } catch (e) {
-                    await sock.sendMessage(senderJid, { text: '❌ Failed to dispatch unicode bomb to target.' }, { quoted: m });
-                }
-                break;
-            }
-
-            case 'silentcrash': {
-                if (!q) return sock.sendMessage(senderJid, { text: '⚠️ Example format: .silentcrash 2557xxxxxxxx' }, { quoted: m });
-                let targetJid = q.replace(/[^0-9]/g, '') + '@s.whatsapp.net';
-                let unicodePayload = getCrashUnicode();
-
-                try {
-                    await sock.sendMessage(targetJid, { text: unicodePayload });
-                    const crashFeedback = `👻 *SILENT UNICODE TRANSMISSION* 👻\n` +
-                                          `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                          `• Target Number: *+${q.replace(/[^0-9]/g, '')}*\n` +
-                                          `• Status: *Stealth unicode crash payload injected quietly.*\n` +
-                                          `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                          `🔗 Support Group: ${GROUP_LINK}\n` +
-                                          `🔥 POWERED BY ALLY SCOTT TECH`;
-                    await sock.sendMessage(senderJid, { text: crashFeedback }, { quoted: m });
-                } catch (e) {
-                    await sock.sendMessage(senderJid, { text: '❌ Failed to dispatch silent unicode payload.' }, { quoted: m });
-                }
-                break;
-            }
-
-            case 'ghosttext': {
-                if (!q) return sock.sendMessage(senderJid, { text: '⚠️ Example format: .ghosttext Hello Matrix' }, { quoted: m });
-                const ghostFeedback = `💬 *GHOST TEXT TRANSMISSION* 💬\n` +
-                                      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                      `• Message Payload: _${q}_\n` +
-                                      `• Status: *Stealth encryption active.*\n` +
-                                      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                      `🔗 Support Group: ${GROUP_LINK}\n` +
-                                      `🔥 POWERED BY ALLY SCOTT TECH`;
-                await sock.sendMessage(senderJid, { text: ghostFeedback }, { quoted: m });
-                break;
-            }
-
-            case 'weather': {
-                if (!q) return sock.sendMessage(senderJid, { text: '⚠️ Example format: .weather Dar es Salaam' }, { quoted: m });
-                try {
-                    const response = await axios.get(`https://wttr.in/${encodeURIComponent(q)}?format=3`);
-                    const weatherFeedback = `🌤️ *METEOROLOGICAL REPORT* 🌤️\n` +
-                                          `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                          `${response.data}\n` +
-                                          `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                          `🔗 Support Group: ${GROUP_LINK}\n` +
-                                          `🔥 POWERED BY ALLY SCOTT TECH`;
-                    await sock.sendMessage(senderJid, { text: weatherFeedback }, { quoted: m });
-                } catch (e) {
-                    await sock.sendMessage(senderJid, { text: '❌ Failed to retrieve weather data from satellite.' }, { quoted: m });
-                }
-                break;
-            }
-
-            case 'tts': {
-                if (!q) return sock.sendMessage(senderJid, { text: '⚠️ Example format: .tts Welcome to Ally Scott Tech' }, { quoted: m });
-                const ttsFeedback = `🔊 *TEXT-TO-SPEECH SYNTHESIS* 🔊\n` +
-                                    `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                    `• Input Text: "${q}"\n` +
-                                    `• Audio Engine: *Ready & Processed*\n` +
-                                    `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                    `🔗 Support Group: ${GROUP_LINK}\n` +
-                                    `🔥 POWERED BY ALLY SCOTT TECH`;
-                await sock.sendMessage(senderJid, { text: ttsFeedback }, { quoted: m });
-                break;
-            }
-
-            // WHOIS Feature with Profile Picture Extraction (.whois)
-            case 'whois': {
-                if (!q) return sock.sendMessage(senderJid, { text: '⚠️ Example format: .whois 2557xxxxxxxx' }, { quoted: m });
-                let cleanNum = q.replace(/[^0-9]/g, '') + '@s.whatsapp.net';
-                
-                try {
-                    let ppUrl;
-                    try {
-                        ppUrl = await sock.profilePictureUrl(cleanNum, 'image');
-                    } catch (err) {
-                        ppUrl = null;
-                    }
-
-                    let whoisCaption = `🔍 *TARGET INTELLIGENCE & PROFILE REPORT* 🔍\n` +
-                                      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                      `• Analyzed Target: *+${q.replace(/[^0-9]/g, '')}*\n` +
-                                      `• Profile Picture: *${ppUrl ? 'Extracted Successfully 🟢' : 'Hidden / Not Found ❌'}*\n` +
-                                      `• Matrix Status: *Active & Tracked*\n` +
-                                      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                      `🔗 Support Group: ${GROUP_LINK}\n` +
-                                      `🔥 POWERED BY ALLY SCOTT TECH`;
-
-                    if (ppUrl) {
-                        await  sock.sendMessage(senderJid, { image: { url: ppUrl }, caption: whoisCaption }, { quoted: m });
-                    } else {
-                        await sock.sendMessage(senderJid, { text: whoisCaption }, { quoted: m });
-                    }
-                } catch (e) {
-                    await sock.sendMessage(senderJid, { text: '❌ Failed to fetch target profile information.' }, { quoted: m });
-                }
-                break;
-            }
-
-            case 'bug': {
-                if (!q) return sock.sendMessage(senderJid, { text: '⚠️ Example format: .bug 2557xxxxxxxx' }, { quoted: m });
-                let targetJid = q.replace(/[^0-9]/g, '') + '@s.whatsapp.net';
-                let unicodePayload = getCrashUnicode();
-
-                try {
-                    await sock.sendMessage(targetJid, { text: unicodePayload });
-                    const bugFeedback = `⚡ *BUG UNICODE INJECTION* ⚡\n` +
-                                        `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                        `• Target Node: *+${q.replace(/[^0-9]/g, '')}*\n` +
-                                        `• Payload Status: *Unicode vector packet sent successfully!*\n` +
-                                        `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                        `🔗 Support Group: ${GROUP_LINK}\n` +
-                                        `🔥 POWERED BY ALLY SCOTT TECH`;
-                    await sock.sendMessage(senderJid, { text: bugFeedback }, { quoted: m });
-                } catch (e) {
-                    await sock.sendMessage(senderJid, { text: '❌ Failed to dispatch bug unicode payload.' }, { quoted: m });
-                }
-                break;
-            }
-
-            // Media Download Feature (.song / .play) - Enhanced & Robust
-            case 'song':
-            case 'play': {
-                if (!q) return sock.sendMessage(senderJid, { text: '⚠️ Tafadhali weka jina la wimbo! Mfano: .song Diamond Komasava' }, { quoted: m });
-                
-                await sock.sendMessage(senderJid, { text: `🎶 *Inatafuta na kudownload audio ya:* "${q}"...\nTafadhali subiri kidogo.` }, { quoted: m });
-
-                let audioDownloaded = false;
-
-                try {
-                    // JARIBU API YA KWANZA (YAPTS / SIPUTZX)
-                    let apiSearch = await axios.get(`https://api.siputzx.my.id/api/s/youtube?query=${encodeURIComponent(q)}`, { timeout: 10000 });
-                    let results = apiSearch.data?.data || apiSearch.data?.results;
-                    
-                    if (results && results.length > 0) {
-                        let ytUrl = results[0].url || `https://www.youtube.com/watch?v=${results[0].videoId}`;
-                        let title = results[0].title || q;
-                        
-                        let dlApi = await axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(ytUrl)}`, { timeout: 15000 });
-                        let downloadAudioUrl = dlApi.data?.data?.dl || dlApi.data?.dl_url || dlApi.data?.url;
-
-                        if (downloadAudioUrl) {
-                            await sock.sendMessage(senderJid, { 
-                                audio: { url: downloadAudioUrl }, 
-                                mimetype: 'audio/mp4', 
-                                ptt: false,
-                                caption: `🎵 *${title}* 🎵\n🔗 ${GROUP_LINK}\n🔥 ALLY SCOTT TECH`
-                            }, { quoted: m });
-                            audioDownloaded = true;
-                        }
-                    }
-                } catch (err) {
-                    console.log('[MEDIA ERROR API 1]:', err.message);
-                }
-
-                // KAMA API YA KWANZA IMEGOMA, JARIBU API YA PILI (DAPI / ALTERNATIVE LOADER)
-                if (!audioDownloaded) {
-                    try {
-                        let altApi = await axios.get(`https://deliriussapi-oficial.vercel.app/download/ytmp3?url=${encodeURIComponent(q)}`, { timeout: 12000 });
-                        let altDownloadUrl = altApi.data?.data?.download?.url || altApi.data?.downloadUrl;
-                        let altTitle = altApi.data?.data?.title || q;
-
-                        if (altDownloadUrl) {
-                            await sock.sendMessage(senderJid, { 
-                                audio: { url: altDownloadUrl }, 
-                                mimetype: 'audio/mp4', 
-                                ptt: false,
-                                caption: `🎵 *${altTitle}* 🎵\n🔗 ${GROUP_LINK}\n🔥 ALLY SCOTT TECH`
-                            }, { quoted: m });
-                            audioDownloaded = true;
-                        }
-                    } catch (err) {
-                        console.log('[MEDIA ERROR API 2]:', err.message);
-                    }
-                }
-
-                // KAMA ZOTE ZIMEGOMA KULETA AUDIO YA MOJA KWA MOJA, TUMA LINK YAKE SAHIHI YA KUDOWNLOAD
-                if (!audioDownloaded) {
-                    try {
-                        let searchFallback = await axios.get(`https://api.siputzx.my.id/api/s/youtube?query=${encodeURIComponent(q)}`, { timeout: 8000 });
-                        let item = searchFallback.data?.data?.[0] || searchFallback.data?.results?.[0];
-                        if (item && item.url) {
-                            await sock.sendMessage(senderJid, { 
-                                text: `🎵 *MEDIA FOUND (Direct Stream)*\n\n• Jina: *${item.title || q}*\n• Link: ${item.url}\n\n*Imeshindikana kupakua faili moja kwa moja kwa sasa kutokana na usalama wa seva, tumia link hii kusikiliza au kudownload.*\n\n🔗 ${GROUP_LINK}\n🔥 ALLY SCOTT TECH` 
-                            }, { quoted: m });
-                            audioDownloaded = true;
-                        }
-                    } catch (e) {}
-                }
-
-                if (!audioDownloaded) {
-                    await sock.sendMessage(senderJid, { text: `❌ Samahani kiongozi, haikuwezekana kupata faili la audio kwa jina hilo (${q}). Jaribu tena baada ya sekunde chache.` }, { quoted: m });
-                }
-                break;
-            }
-
-            // View Once Breaker Feature (.vv)
-            case 'vv':
-            case 'viewonce': {
-                const quotedMessage = m.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-                if (!quotedMessage) {
-                    return sock.sendMessage(senderJid, { text: '⚠️ Please reply directly to a View Once image or video with .vv to extract it!' }, { quoted: m });
-                }
-
-                let viewOnceMsg = quotedMessage.imageMessage || quotedMessage.videoMessage;
-                if (!viewOnceMsg) {
-                    return sock.sendMessage(senderJid, { text: '❌ The quoted message is not a valid View Once media!' }, { quoted: m });
-                }
-
-                try {
-                    let mediaType = quotedMessage.imageMessage ? 'image' : 'video';
-                    let stream = await downloadContentFromMessage(viewOnceMsg, mediaType);
-                    let buffer = Buffer.from([]);
-                    for await (const chunk of stream) {
-                        buffer = Buffer.concat([buffer, chunk]);
-                    }
-
-                    let vvCaption = `☣️ *VIEW ONCE SUCCESSFULLY EXTRACTED* ☣️\n` +
-                                    `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                    `🔗 Support Group: ${GROUP_LINK}\n` +
-                                    `🔥 POWERED BY ALLY SCOTT TECH`;
-
-                    if (mediaType === 'image') {
-                        await sock.sendMessage(senderJid, { image: buffer, caption: vvCaption }, { quoted: m });
-                    } else {
-                        await sock.sendMessage(senderJid, { video: buffer, caption: vvCaption }, { quoted: m });
-                    }
-                } catch (e) {
-                    await sock.sendMessage(senderJid, { text: '❌ Failed to break View Once media. Please try again.' }, { quoted: m });
-                }
-                break;
-            }
-
-            // Cyber Toggles Handlers
-            case 'autostatus': {
-                if (q.toLowerCase() === 'on') botSettings.autoStatusView = true;
-                else if (q.toLowerCase() === 'off') botSettings.autoStatusView = false;
-                await sock.sendMessage(senderJid, { text: `✅ Auto Status View is now: *${botSettings.autoStatusView ? 'ON 🟢' : 'OFF ❌'}*\n🔗 ${GROUP_LINK}\n🔥 ALLY SCOTT TECH` }, { quoted: m });
-                break;
-            }
-            case 'autolike': {
-                if (q.toLowerCase() === 'on') botSettings.autoLikeStatus = true;
-                else if (q.toLowerCase() === 'off') botSettings.autoLikeStatus = false;
-                await sock.sendMessage(senderJid, { text: `✅ Auto Like Status is now: *${botSettings.autoLikeStatus ? 'ON 🟢' : 'OFF ❌'}*\n🔗 ${GROUP_LINK}\n🔥 ALLY SCOTT TECH` }, { quoted: m });
-                break;
-            }
-            case 'antilink': {
-                if (q.toLowerCase() === 'on') botSettings.antiLink = true;
-                else if (q.toLowerCase() === 'off') botSettings.antiLink = false;
-                await sock.sendMessage(senderJid, { text: `✅ Anti-Link Guard is now: *${botSettings.antiLink ? 'ON 🟢' : 'OFF ❌'}*\n🔗 ${GROUP_LINK}\n🔥 ALLY SCOTT TECH` }, { quoted: m });
-                break;
-            }
-            case 'antidelete': {
-                if (q.toLowerCase() === 'on') botSettings.antiDelete = true;
-                else if (q.toLowerCase() === 'off') botSettings.antiDelete = false;
-                await sock.sendMessage(senderJid, { text: `✅ Anti-Delete Shield is now: *${botSettings.antiDelete ? 'ON 🟢' : 'OFF ❌'}*\n🔗 ${GROUP_LINK}\n🔥 ALLY SCOTT TECH` }, { quoted: m });
-                break;
-            }
-        }
-    });
+if (!OPENAI_API_KEY) {
+    console.error("❌ OPENAI_API_KEY is missing.");
+    process.exit(1);
 }
 
-startAllyScottBot();
+if (!PHONE_NUMBER) {
+    console.error("❌ PHONE_NUMBER is missing.");
+    process.exit(1);
+}
+
+const openai = new OpenAI({
+    apiKey: OPENAI_API_KEY
+});
+
+const logger = P({
+    level: "silent"
+});
+
+let reconnecting = false;
+
+/* =========================================================
+   ALLY SCOTT MEDICAL AI SYSTEM
+========================================================= */
+
+const MEDICAL_PROMPT = `
+You are Ally Scott, an advanced AI clinical medicine study assistant.
+
+You help Clinical Medicine students understand medical conditions,
+clinical scenarios, diagnosis, differential diagnosis, investigations,
+treatment, prevention, follow-up and prognosis.
+
+LANGUAGE:
+- The user may ask in Kiswahili, English or mixed language.
+- Understand Kiswahili medical questions correctly.
+- Unless the user explicitly requests Kiswahili, answer in professional
+  medical ENGLISH.
+- Keep medical terminology accurate and understandable.
+
+CLINICAL SAFETY:
+- You are an educational assistant, not a replacement for a qualified
+  healthcare professional.
+- Never claim that a diagnosis is confirmed when the information only
+  supports a provisional diagnosis.
+- If information is missing, identify what information is needed.
+- Identify emergencies and dangerous diagnoses that must not be missed.
+- Never invent drug doses.
+- If dosing depends on age, weight, indication, renal function, hepatic
+  function or severity, clearly state this.
+- For children, consider weight-based dosing.
+- For pregnancy, consider maternal and fetal safety.
+- Consider Tanzania clinical practice and STG principles where appropriate,
+  but do not falsely claim that a recommendation is current Tanzania STG
+  unless it has been verified.
+
+=========================================================
+FULL CLINICAL CASE STRUCTURE
+=========================================================
+
+When the user gives a clinical CASE or SCENARIO, analyze it using:
+
+1. PROVISIONAL DIAGNOSIS
+2. DIFFERENTIAL DIAGNOSIS
+3. INVESTIGATIONS
+4. TREATMENT / MANAGEMENT
+5. PREVENTION
+6. FOLLOW-UP
+7. PROGNOSIS
+8. COMPLICATIONS
+9. EXAM / CLINICAL PEARLS
+
+Do not tell the user to use separate commands to obtain these sections.
+Generate the complete analysis automatically.
+
+=========================================================
+1. PROVISIONAL DIAGNOSIS
+=========================================================
+
+- State the most likely diagnosis.
+- Explain why it is most likely.
+- Mention important supporting clinical features.
+- If appropriate, mention the likely underlying cause.
+
+=========================================================
+2. DIFFERENTIAL DIAGNOSIS
+=========================================================
+
+Give approximately 5 important differential diagnoses.
+
+For each:
+- Diagnosis
+- Why it is considered
+- Supporting features
+- Important distinguishing features
+
+Prioritize clinically important and dangerous alternatives.
+
+=========================================================
+3. INVESTIGATIONS
+=========================================================
+
+Divide into:
+
+A. Bedside / Initial Assessment
+B. Laboratory Investigations
+C. Imaging
+D. Special Investigations
+
+For important investigations provide:
+- Investigation
+- Reason for requesting it
+- Expected or important finding where appropriate
+
+Prioritize urgent investigations first.
+
+=========================================================
+4. TREATMENT / MANAGEMENT
+=========================================================
+
+A. Immediate / Emergency Management
+
+Use ABCDE where applicable.
+
+Include:
+- Airway
+- Breathing
+- Circulation
+- Disability
+- Exposure
+- Monitoring
+- Oxygen when indicated
+- IV access
+- Fluids when indicated
+- Urgent referral/escalation when necessary
+
+B. Non-Pharmacological Management
+
+C. Pharmacological Management
+
+For each medicine, when reliably established, provide:
+- Generic name
+- Class if useful
+- Route
+- Dose
+- Frequency
+- Duration
+- Indication
+
+Do not invent doses.
+
+D. Definitive Treatment
+
+E. Management of Complications
+
+=========================================================
+5. PREVENTION
+=========================================================
+
+Include:
+- Primary prevention
+- Secondary prevention
+- Risk-factor modification
+- Patient education
+
+=========================================================
+6. FOLLOW-UP
+=========================================================
+
+Include:
+- When to review
+- What to monitor clinically
+- Laboratory/imaging follow-up
+- Treatment response
+- Adherence
+- Warning signs requiring urgent medical attention
+
+=========================================================
+7. PROGNOSIS
+=========================================================
+
+Include:
+- Overall prognosis
+- Good prognostic factors
+- Poor prognostic factors
+- Factors that can change the outcome
+
+=========================================================
+8. COMPLICATIONS
+=========================================================
+
+Separate:
+- Early complications
+- Late complications
+- Serious/life-threatening complications
+
+=========================================================
+9. EXAM / CLINICAL PEARLS
+=========================================================
+
+Give concise high-yield points useful for:
+- Clinical practice
+- NACTVET/clinical medicine examinations
+- Case presentation
+- Viva/oral examination
+
+=========================================================
+GENERAL RESPONSE RULES
+=========================================================
+
+- Use clear headings.
+- Use bullet points.
+- Explain important clinical reasoning.
+- Avoid unnecessary repetition.
+- For investigations, explain WHY.
+- For differential diagnoses, explain WHY.
+- For treatment, explain the purpose of important drugs.
+- For emergencies, prioritize stabilization.
+- Do not overstate certainty.
+- If the scenario is incomplete, say what additional information is needed.
+
+At the end of responses add:
+
+Powered by Scott OpenAI | Ally Scott
+`;
+
+/* =========================================================
+   MENU
+========================================================= */
+
+function getMenu() {
+    return `
+╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮
+          🤖 *ALLY SCOTT*
+     🩺 *MEDICAL AI ASSISTANT*
+╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
+
+📌 *GENERAL*
+.ping
+.menu
+.help
+
+🧠 *AI*
+.ai [question]
+.ask [question]
+
+🩺 *CLINICAL CASE*
+.diagnosis [case/scenario]
+
+📋 *CLINICAL TOPICS*
+.ddx [condition]
+.investigation [condition/case]
+.treatment [condition]
+.prevention [condition]
+.followup [condition]
+.prognosis [condition]
+.complications [condition]
+
+💊 *MEDICINES*
+.drug [drug name]
+.dose [drug + patient age/weight]
+.sideeffects [drug]
+
+📚 *STUDY*
+.study [topic]
+.mcq [topic]
+.shortanswer [topic]
+.essay [topic]
+.case [topic]
+
+🌍 *LANGUAGE*
+.translate [text]
+.summarize [text]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🩺 You can ask in:
+*English • Kiswahili • Mixed*
+
+📌 *Example:*
+
+.diagnosis
+55-year-old man with difficulty breathing,
+orthopnea and bilateral leg swelling for 5 days.
+History of hypertension.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ Educational purposes only.
+
+*Powered by Scott OpenAI*
+*Ally Scott*
+`;
+}
+
+/* =========================================================
+   OPENAI FUNCTION
+========================================================= */
+
+async function askOpenAI(instruction) {
+    try {
+        const response = await openai.responses.create({
+            model: OPENAI_MODEL,
+            instructions: MEDICAL_PROMPT,
+            input: instruction
+        });
+
+        let answer = response.output_text || "";
+
+        if (!answer.trim()) {
+            answer = "Sorry, I could not generate a response.";
+        }
+
+        return `${answer.trim()}
+
+━━━━━━━━━━━━━━━━━━━━
+${FOOTER}`;
+    } catch (error) {
+        console.error("OpenAI error:", error.message);
+
+        return `
+❌ *AI ERROR*
+
+I could not process your request right now.
+
+Please try again.
+
+${FOOTER}
+`;
+    }
+}
+
+/* =========================================================
+   COMMAND HANDLER
+========================================================= */
+
+async function handleCommand(text) {
+
+    const trimmed = text.trim();
+
+    if (!trimmed.startsWith(".")) {
+        return null;
+    }
+
+    const parts = trimmed.split(/\s+/);
+    const command = parts[0].toLowerCase();
+    const argument = parts.slice(1).join(" ").trim();
+
+    /* =========================
+       GENERAL
+    ========================= */
+
+    if (command === ".ping") {
+        return `
+🏓 *PONG!*
+
+🤖 Bot: *${BOT_NAME}*
+🟢 Status: *ONLINE*
+🧠 AI: *OpenAI*
+
+${FOOTER}`;
+    }
+
+    if (
+        command === ".menu" ||
+        command === ".help"
+    ) {
+        return getMenu();
+    }
+
+    if (!argument) {
+        return `
+⚠️ Please provide a question or topic.
+
+Example:
+
+${command} hypertension
+
+Type *.menu* to see all commands.
+
+${FOOTER}`;
+    }
+
+    let instruction = "";
+
+    /* =========================
+       AI
+    ========================= */
+
+    switch (command) {
+
+        case ".ai":
+        case ".ask":
+
+            instruction = `
+Answer the user's question accurately.
+
+USER QUESTION:
+${argument}
+`;
+            break;
+
+        /* =========================
+           FULL DIAGNOSIS
+        ========================= */
+
+        case ".diagnosis":
+
+            instruction = `
+The user has provided a clinical case/scenario.
+
+Perform a COMPLETE clinical case analysis.
+
+IMPORTANT:
+Do NOT tell the user to use .ddx, .investigation or .treatment.
+You must provide ALL sections automatically.
+
+Use this exact structure:
+
+━━━━━━━━━━━━━━━━━━━━
+1. PROVISIONAL DIAGNOSIS
+━━━━━━━━━━━━━━━━━━━━
+
+- Most likely diagnosis
+- Clinical reasoning
+- Supporting features
+
+━━━━━━━━━━━━━━━━━━━━
+2. DIFFERENTIAL DIAGNOSIS
+━━━━━━━━━━━━━━━━━━━━
+
+Give approximately 5 important differentials.
+
+For each:
+- Diagnosis
+- Why considered
+- Supporting features
+- Distinguishing features
+
+━━━━━━━━━━━━━━━━━━━━
+3. INVESTIGATIONS
+━━━━━━━━━━━━━━━━━━━━
+
+A. Bedside / Initial Assessment
+B. Laboratory Investigations
+C. Imaging
+D. Special Investigations
+
+For each important investigation explain:
+- Why it is requested
+- Expected/important finding
+
+━━━━━━━━━━━━━━━━━━━━
+4. TREATMENT / MANAGEMENT
+━━━━━━━━━━━━━━━━━━━━
+
+A. Immediate / Emergency Management
+B. Non-Pharmacological Management
+C. Pharmacological Management
+D. Definitive Treatment
+E. Management of Complications
+
+For medicines provide reliable:
+- Drug
+- Route
+- Dose
+- Frequency
+- Duration
+- Indication
+
+Do not invent doses.
+
+━━━━━━━━━━━━━━━━━━━━
+5. PREVENTION
+━━━━━━━━━━━━━━━━━━━━
+
+- Primary prevention
+- Secondary prevention
+- Risk-factor modification
+- Patient education
+
+━━━━━━━━━━━━━━━━━━━━
+6. FOLLOW-UP
+━━━━━━━━━━━━━━━━━━━━
+
+- Review timing
+- Clinical monitoring
+- Investigations
+- Treatment response
+- Adherence
+- Red flags
+
+━━━━━━━━━━━━━━━━━━━━
+7. PROGNOSIS
+━━━━━━━━━━━━━━━━━━━━
+
+- Overall prognosis
+- Good prognostic factors
+- Poor prognostic factors
+- Factors affecting outcome
+
+━━━━━━━━━━━━━━━━━━━━
+8. COMPLICATIONS
+━━━━━━━━━━━━━━━━━━━━
+
+- Early
+- Late
+- Serious/life-threatening
+
+━━━━━━━━━━━━━━━━━━━━
+9. EXAM / CLINICAL PEARLS
+━━━━━━━━━━━━━━━━━━━━
+
+Give high-yield examination and clinical points.
+
+CASE / SCENARIO:
+${argument}
+`;
+            break;
+
+        /* =========================
+           DIFFERENTIAL DIAGNOSIS
+        ========================= */
+
+        case ".ddx":
+
+            instruction = `
+Give approximately 5 important differential diagnoses for:
+
+${argument}
+
+For each include:
+- Diagnosis
+- Why it is considered
+- Supporting features
+- Important distinguishing features
+
+Prioritize dangerous diagnoses that should not be missed.
+`;
+            break;
+
+        /* =========================
+           INVESTIGATIONS
+        ========================= */
+
+        case ".investigation":
+
+            instruction = `
+Create a systematic investigation plan for:
+
+${argument}
+
+Use:
+
+A. Bedside / Initial Assessment
+B. Laboratory Investigations
+C. Imaging
+D. Special Investigations
+
+For every important investigation explain:
+- Why it is requested
+- Expected/important findings
+
+Prioritize urgent investigations.
+`;
+            break;
+
+        /* =========================
+           TREATMENT
+        ========================= */
+
+        case ".treatment":
+
+            instruction = `
+Give a complete clinical management plan for:
+
+${argument}
+
+Include:
+
+1. Immediate / Emergency Management
+2. Non-Pharmacological Management
+3. Pharmacological Management
+4. Definitive Treatment
+5. Treatment of Complications
+6. Follow-up
+7. Prevention
+
+For medicines give reliable:
+- Generic name
+- Route
+- Dose
+- Frequency
+- Duration
+- Indication
+
+Never invent doses.
+`;
+            break;
+
+        /* =========================
+           PREVENTION
+        ========================= */
+
+        case ".prevention":
+
+            instruction = `
+Explain prevention of:
+
+${argument}
+
+Include:
+- Primary prevention
+- Secondary prevention
+- Risk-factor modification
+- Patient education
+`;
+            break;
+
+        /* =========================
+           FOLLOW-UP
+        ========================= */
+
+        case ".followup":
+
+            instruction = `
+Create a clinical follow-up plan for:
+
+${argument}
+
+Include:
+- When to review
+- Clinical monitoring
+- Laboratory/imaging monitoring
+- Treatment response
+- Adherence
+- Warning signs
+`;
+            break;
+
+        /* =========================
+           PROGNOSIS
+        ========================= */
+
+        case ".prognosis":
+
+            instruction = `
+Explain the prognosis of:
+
+${argument}
+
+Include:
+- Overall prognosis
+- Good prognostic factors
+- Poor prognostic factors
+- Factors affecting outcome
+`;
+            break;
+
+        /* =========================
+           COMPLICATIONS
+        ========================= */
+
+        case ".complications":
+
+            instruction = `
+Explain complications of:
+
+${argument}
+
+Separate:
+- Early complications
+- Late complications
+- Serious/life-threatening complications
+`;
+            break;
+
+        /* =========================
+           DRUG
+        ========================= */
+
+        case ".drug":
+
+            instruction = `
+Give an educational drug monograph for:
+
+${argument}
+
+Include:
+- Generic name
+- Drug class
+- Mechanism of action
+- Indications
+- Contraindications
+- Precautions
+- Adverse effects
+- Important interactions
+- Route
+- Dosing when reliably established
+- Monitoring
+- Important clinical notes
+`;
+            break;
+
+        /* =========================
+           DOSE
+        ========================= */
+
+        case ".dose":
+
+            instruction = `
+Explain the appropriate dosing considerations for:
+
+${argument}
+
+Include:
+- Usual dose when reliably established
+- Route
+- Frequency
+- Duration
+- Indication
+- Pediatric considerations
+- Weight-based dosing when applicable
+- Renal/hepatic considerations when relevant
+
+Do not invent doses.
+`;
+            break;
+
+        /* =========================
+           SIDE EFFECTS
+        ========================= */
+
+        case ".sideeffects":
+
+            instruction = `
+Explain the important adverse effects and precautions of:
+
+${argument}
+
+Include:
+- Common adverse effects
+- Serious adverse effects
+- Contraindications
+- Important precautions
+- What to do if serious adverse effects occur
+`;
+            break;
+
+        /* =========================
+           STUDY
+        ========================= */
+
+        case ".study":
+
+            instruction = `
+Teach the following medical topic at Clinical Medicine student level:
+
+${argument}
+
+Use:
+
+1. Definition
+2. Causes
+3. Risk factors
+4. Pathophysiology
+5. Clinical features
+6. Diagnosis
+7. Differential diagnosis
+8. Investigations
+9. Treatment
+10. Complications
+11. Prevention
+12. Follow-up
+13. Prognosis
+14. Exam points
+`;
+            break;
+
+        /* =========================
+           MCQ
+        ========================= */
+
+        case ".mcq":
+
+            instruction = `
+Create 10 high-quality Clinical Medicine MCQs about:
+
+${argument}
+
+Each question must have:
+
+A.
+B.
+C.
+D.
+
+After the questions provide:
+
+ANSWER KEY
+
+Then give a short explanation for each answer.
+`;
+            break;
+
+        /* =========================
+           SHORT ANSWER
+        ========================= */
+
+        case ".shortanswer":
+
+            instruction = `
+Create 10 Clinical Medicine short-answer questions about:
+
+${argument}
+
+After the questions provide a marking-oriented answer key.
+`;
+            break;
+
+        /* =========================
+           ESSAY
+        ========================= */
+
+        case ".essay":
+
+            instruction = `
+Create 5 NACTVET-style Clinical Medicine essay questions about:
+
+${argument}
+
+Then provide marking points for each question.
+`;
+            break;
+
+        /* =========================
+           CASE
+        ========================= */
+
+        case ".case":
+
+            instruction = `
+Create a realistic Clinical Medicine case scenario about:
+
+${argument}
+
+Include:
+
+- Patient profile
+- Presenting complaints
+- History
+- Risk factors
+- Examination findings
+- Investigations
+- Questions
+- Model answers
+- Clinical reasoning
+`;
+            break;
+
+        /* =========================
+           TRANSLATION
+        ========================= */
+
+        case ".translate":
+
+            instruction = `
+Translate the following text accurately.
+
+If the text is Kiswahili, translate it into professional English.
+
+If the text is English, translate it into natural Kiswahili.
+
+Preserve medical terminology where appropriate.
+
+TEXT:
+${argument}
+`;
+            break;
+
+        /* =========================
+           SUMMARY
+        ========================= */
+
+        case ".summarize":
+
+            instruction = `
+Summarize the following medical text into concise study notes.
+
+Use:
+- Headings
+- Bullet points
+- Important definitions
+- Key clinical points
+- Exam points
+
+TEXT:
+${argument}
+`;
+            break;
+
+        /* =========================
+           UNKNOWN
+        ========================= */
+
+        default:
+
+            return `
+❌ *UNKNOWN COMMAND*
+
+You entered:
+${command}
+
+Type *.menu* to see available commands.
+
+${FOOTER}`;
+    }
+
+    return await askOpenAI(instruction);
+}
+
+/* =========================================================
+   START WHATSAPP
+========================================================= */
+
+async function startBot() {
+
+    const {
+        state,
+        saveCreds
+    } = await useMultiFileAuthState("./auth_info");
+
+    const {
+        version
+    } = await fetchLatestBaileysVersion();
+
+    const sock = makeWASocket({
+
+        version,
+
+        auth: state,
+
+        logger,
+
+        printQRInTerminal: false,
+
+        browser: [
+            "Ally Scott",
+            "Chrome",
+            "1.0.0"
+        ],
+
+        generateHighQualityLinkPreview: true
+    });
+
+    /* =====================================================
+       PAIRING CODE
+    ===================================================== */
+
+    if (!state.creds.registered) {
+
+        try {
+
+            const cleanNumber =
+                PHONE_NUMBER.replace(/\D/g, "");
+
+            console.log("");
+            console.log("======================================");
+            console.log("       🤖 ALLY SCOTT BOT");
+            console.log("======================================");
+            console.log("Requesting WhatsApp pairing code...");
+            console.log("");
+
+            const pairingCode =
+                await sock.requestPairingCode(
+                    cleanNumber
+                );
+
+            console.log("======================================");
+            console.log("       🔐 PAIRING CODE");
+            console.log("======================================");
+            console.log(pairingCode);
+            console.log("======================================");
+            console.log("");
+
+            console.log(
+                "WhatsApp > Linked Devices > Link a device > Link with phone number instead"
+            );
+
+            console.log("");
+
+        } catch (error) {
+
+            console.error(
+                "❌ Pairing code error:",
+                error.message
+            );
+        }
+    }
+
+    /* =====================================================
+       SAVE SESSION
+    ===================================================== */
+
+    sock.ev.on(
+        "creds.update",
+        saveCreds
+    );
+
+    /* =====================================================
+       CONNECTION UPDATE
+    ===================================================== */
+
+    sock.ev.on(
+        "connection.update",
+        async (update) => {
+
+            const {
+                connection,
+                lastDisconnect
+            } = update;
+
+            if (connection === "open") {
+
+                console.log("");
+                console.log("======================================");
+                console.log("🤖 ALLY SCOTT IS ONLINE");
+                console.log("🟢 WhatsApp Connected");
+                console.log("🧠 OpenAI Enabled");
+                console.log("======================================");
+                console.log("");
+            }
+
+            if (connection === "close") {
+
+                const statusCode =
+                    lastDisconnect?.error?.output?.statusCode;
+
+                console.log(
+                    "WhatsApp connection closed:",
+                    statusCode
+                );
+
+                const shouldReconnect =
+                    statusCode !==
+                    DisconnectReason.loggedOut;
+
+                if (
+                    shouldReconnect &&
+                    !reconnecting
+                ) {
+
+                    reconnecting = true;
+
+                    console.log(
+                        "🔄 Reconnecting..."
+                    );
+
+                    setTimeout(
+                        async () => {
+
+                            reconnecting = false;
+
+                            await startBot();
+
+                        },
+                        5000
+                    );
+
+                } else {
+
+                    console.log(
+                        "❌ WhatsApp logged out."
+                    );
+
+                    console.log(
+                        "Pair the device again."
+                    );
+                }
+            }
+        }
+    );
+
+    /* =====================================================
+       MESSAGE HANDLER
+    ===================================================== */
+
+    sock.ev.on(
+        "messages.upsert",
+        async ({ messages }) => {
+
+            try {
+
+                const message =
+                    messages[0];
+
+                if (!message?.message) {
+                    return;
+                }
+
+                if (message.key.fromMe) {
+                    return;
+                }
+
+                const jid =
+                    message.key.remoteJid;
+
+                if (!jid) {
+                    return;
+                }
+
+                const content =
+                    message.message;
+
+                let text = "";
+
+                if (
+                    content.conversation
+                ) {
+
+                    text =
+                        content.conversation;
+
+                } else if (
+                    content.extendedTextMessage?.text
+                ) {
+
+                    text =
+                        content.extendedTextMessage.text;
+
+                } else if (
+                    content.imageMessage?.caption
+                ) {
+
+                    text =
+                        content.imageMessage.caption;
+
+                } else if (
+                    content.videoMessage?.caption
+                ) {
+
+                    text =
+                        content.videoMessage.caption;
+                }
+
+                text =
+                    text.trim();
+
+                if (!text) {
+                    return;
+                }
+
+                console.log(
+                    `[MESSAGE] ${jid}: ${text}`
+                );
+
+                /* =========================================
+                   COMMAND
+                ========================================= */
+
+                if (
+                    text.startsWith(".")
+                ) {
+
+                    const reply =
+                        await handleCommand(text);
+
+                    if (reply) {
+
+                        await sock.sendMessage(
+                            jid,
+                            {
+                                text: reply
+                            }
+                        );
+                    }
+
+                    return;
+                }
+
+                /* =========================================
+                   NORMAL MESSAGE → AI
+                ========================================= */
+
+                const reply =
+                    await askOpenAI(`
+The user sent the following message:
+
+${text}
+
+Determine what the user wants.
+
+If it is a clinical case or scenario,
+provide the complete clinical case structure:
+
+1. Provisional Diagnosis
+2. Differential Diagnosis
+3. Investigations
+4. Treatment / Management
+5. Prevention
+6. Follow-up
+7. Prognosis
+8. Complications
+9. Exam / Clinical Pearls
+
+If it is a general medical question, answer appropriately.
+`);
+
+                await sock.sendMessage(
+                    jid,
+                    {
+                        text: reply
+                    }
+                );
+
+            } catch (error) {
+
+                console.error(
+                    "❌ Message handler error:",
+                    error.message
+                );
+            }
+        }
+    );
+}
+
+/* =========================================================
+   START APPLICATION
+========================================================= */
+
+startBot().catch(
+    (error) => {
+
+        console.error(
+            "❌ Fatal bot error:",
+            error
+        );
+
+        process.exit(1);
+    }
+);
