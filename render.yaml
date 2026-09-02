@@ -1,0 +1,19 @@
+services:
+  - type: worker
+    name: ally-scott-whatsapp-bot
+    runtime: node
+
+    buildCommand: npm install
+
+    startCommand: npm start
+
+    envVars:
+
+      - key: OPENAI_API_KEY
+        sync: false
+
+      - key: OPENAI_MODEL
+        value: gpt-5.6
+
+      - key: PHONE_NUMBER
+        sync: false
