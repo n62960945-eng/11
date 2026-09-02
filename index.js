@@ -1,14 +1,25 @@
 require("dotenv").config();
 
+const http = require("http");
+
+const PORT = process.env.PORT || 10000;
+
+http.createServer((req, res) => {
+    res.writeHead(200, {
+        "Content-Type": "text/plain"
+    });
+
+    res.end("Ally Scott WhatsApp Bot is running.");
+}).listen(PORT, () => {
+    console.log(`🌐 Server running on port ${PORT}`);
+});
+
 const {
     default: makeWASocket,
     useMultiFileAuthState,
     DisconnectReason,
     fetchLatestBaileysVersion
 } = require("@whiskeysockets/baileys");
-
-const P = require("pino");
-const OpenAI = require("openai");
 
 /* =========================================================
    ALLY SCOTT CONFIGURATION
