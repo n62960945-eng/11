@@ -10,12 +10,20 @@ const {
 const P = require("pino");
 const OpenAI = require("openai");
 
+/* =========================================================
+   ALLY SCOTT CONFIGURATION
+========================================================= */
+
 const BOT_NAME = "Ally Scott";
 const FOOTER = "Powered by Scott OpenAI | Ally Scott";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.6";
 const PHONE_NUMBER = process.env.PHONE_NUMBER;
+
+/* =========================================================
+   ENVIRONMENT CHECK
+========================================================= */
 
 if (!OPENAI_API_KEY) {
     console.error("❌ OPENAI_API_KEY is missing.");
@@ -27,15 +35,24 @@ if (!PHONE_NUMBER) {
     process.exit(1);
 }
 
+/* =========================================================
+   OPENAI
+========================================================= */
+
 const openai = new OpenAI({
     apiKey: OPENAI_API_KEY
 });
+
+/* =========================================================
+   LOGGER
+========================================================= */
 
 const logger = P({
     level: "silent"
 });
 
 let reconnecting = false;
+let pairingRequested = false;
 
 /* =========================================================
    ALLY SCOTT MEDICAL AI SYSTEM
@@ -246,6 +263,7 @@ Powered by Scott OpenAI | Ally Scott
 ========================================================= */
 
 function getMenu() {
+
     return `
 ╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮
           🤖 *ALLY SCOTT*
@@ -290,6 +308,7 @@ function getMenu() {
 .summarize [text]
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 🩺 You can ask in:
 *English • Kiswahili • Mixed*
 
@@ -301,6 +320,7 @@ orthopnea and bilateral leg swelling for 5 days.
 History of hypertension.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 ⚠️ Educational purposes only.
 
 *Powered by Scott OpenAI*
@@ -313,25 +333,41 @@ History of hypertension.
 ========================================================= */
 
 async function askOpenAI(instruction) {
-    try {
-        const response = await openai.responses.create({
-            model: OPENAI_MODEL,
-            instructions: MEDICAL_PROMPT,
-            input: instruction
-        });
 
-        let answer = response.output_text || "";
+    try {
+
+        const response =
+            await openai.responses.create({
+
+                model: OPENAI_MODEL,
+
+                instructions:
+                    MEDICAL_PROMPT,
+
+                input:
+                    instruction
+            });
+
+        let answer =
+            response.output_text || "";
 
         if (!answer.trim()) {
-            answer = "Sorry, I could not generate a response.";
+
+            answer =
+                "Sorry, I could not generate a response.";
         }
 
         return `${answer.trim()}
 
 ━━━━━━━━━━━━━━━━━━━━
 ${FOOTER}`;
+
     } catch (error) {
-        console.error("OpenAI error:", error.message);
+
+        console.error(
+            "OpenAI error:",
+            error.message
+        );
 
         return `
 ❌ *AI ERROR*
@@ -351,21 +387,31 @@ ${FOOTER}
 
 async function handleCommand(text) {
 
-    const trimmed = text.trim();
+    const trimmed =
+        text.trim();
 
     if (!trimmed.startsWith(".")) {
         return null;
     }
 
-    const parts = trimmed.split(/\s+/);
-    const command = parts[0].toLowerCase();
-    const argument = parts.slice(1).join(" ").trim();
+    const parts =
+        trimmed.split(/\s+/);
 
-    /* =========================
+    const command =
+        parts[0].toLowerCase();
+
+    const argument =
+        parts
+            .slice(1)
+            .join(" ")
+            .trim();
+
+    /* =====================================================
        GENERAL
-    ========================= */
+    ===================================================== */
 
     if (command === ".ping") {
+
         return `
 🏓 *PONG!*
 
@@ -380,12 +426,14 @@ ${FOOTER}`;
         command === ".menu" ||
         command === ".help"
     ) {
+
         return getMenu();
     }
 
     if (!argument) {
+
         return `
-⚠️ Please provide a question or topic.
+⚠️ *Please provide a question or topic.*
 
 Example:
 
@@ -398,9 +446,9 @@ ${FOOTER}`;
 
     let instruction = "";
 
-    /* =========================
+    /* =====================================================
        AI
-    ========================= */
+    ===================================================== */
 
     switch (command) {
 
@@ -413,11 +461,12 @@ Answer the user's question accurately.
 USER QUESTION:
 ${argument}
 `;
+
             break;
 
-        /* =========================
+        /* =================================================
            FULL DIAGNOSIS
-        ========================= */
+        ================================================= */
 
         case ".diagnosis":
 
@@ -531,11 +580,12 @@ Give high-yield examination and clinical points.
 CASE / SCENARIO:
 ${argument}
 `;
+
             break;
 
-        /* =========================
+        /* =================================================
            DIFFERENTIAL DIAGNOSIS
-        ========================= */
+        ================================================= */
 
         case ".ddx":
 
@@ -552,11 +602,12 @@ For each include:
 
 Prioritize dangerous diagnoses that should not be missed.
 `;
+
             break;
 
-        /* =========================
+        /* =================================================
            INVESTIGATIONS
-        ========================= */
+        ================================================= */
 
         case ".investigation":
 
@@ -578,11 +629,12 @@ For every important investigation explain:
 
 Prioritize urgent investigations.
 `;
+
             break;
 
-        /* =========================
+        /* =================================================
            TREATMENT
-        ========================= */
+        ================================================= */
 
         case ".treatment":
 
@@ -611,11 +663,12 @@ For medicines give reliable:
 
 Never invent doses.
 `;
+
             break;
 
-        /* =========================
+        /* =================================================
            PREVENTION
-        ========================= */
+        ================================================= */
 
         case ".prevention":
 
@@ -630,11 +683,12 @@ Include:
 - Risk-factor modification
 - Patient education
 `;
+
             break;
 
-        /* =========================
+        /* =================================================
            FOLLOW-UP
-        ========================= */
+        ================================================= */
 
         case ".followup":
 
@@ -651,11 +705,12 @@ Include:
 - Adherence
 - Warning signs
 `;
+
             break;
 
-        /* =========================
+        /* =================================================
            PROGNOSIS
-        ========================= */
+        ================================================= */
 
         case ".prognosis":
 
@@ -670,11 +725,12 @@ Include:
 - Poor prognostic factors
 - Factors affecting outcome
 `;
+
             break;
 
-        /* =========================
+        /* =================================================
            COMPLICATIONS
-        ========================= */
+        ================================================= */
 
         case ".complications":
 
@@ -688,11 +744,12 @@ Separate:
 - Late complications
 - Serious/life-threatening complications
 `;
+
             break;
 
-        /* =========================
+        /* =================================================
            DRUG
-        ========================= */
+        ================================================= */
 
         case ".drug":
 
@@ -715,11 +772,12 @@ Include:
 - Monitoring
 - Important clinical notes
 `;
+
             break;
 
-        /* =========================
+        /* =================================================
            DOSE
-        ========================= */
+        ================================================= */
 
         case ".dose":
 
@@ -740,11 +798,12 @@ Include:
 
 Do not invent doses.
 `;
+
             break;
 
-        /* =========================
+        /* =================================================
            SIDE EFFECTS
-        ========================= */
+        ================================================= */
 
         case ".sideeffects":
 
@@ -760,11 +819,12 @@ Include:
 - Important precautions
 - What to do if serious adverse effects occur
 `;
+
             break;
 
-        /* =========================
+        /* =================================================
            STUDY
-        ========================= */
+        ================================================= */
 
         case ".study":
 
@@ -790,11 +850,12 @@ Use:
 13. Prognosis
 14. Exam points
 `;
+
             break;
 
-        /* =========================
+        /* =================================================
            MCQ
-        ========================= */
+        ================================================= */
 
         case ".mcq":
 
@@ -816,11 +877,12 @@ ANSWER KEY
 
 Then give a short explanation for each answer.
 `;
+
             break;
 
-        /* =========================
+        /* =================================================
            SHORT ANSWER
-        ========================= */
+        ================================================= */
 
         case ".shortanswer":
 
@@ -831,11 +893,12 @@ ${argument}
 
 After the questions provide a marking-oriented answer key.
 `;
+
             break;
 
-        /* =========================
+        /* =================================================
            ESSAY
-        ========================= */
+        ================================================= */
 
         case ".essay":
 
@@ -846,11 +909,12 @@ ${argument}
 
 Then provide marking points for each question.
 `;
+
             break;
 
-        /* =========================
+        /* =================================================
            CASE
-        ========================= */
+        ================================================= */
 
         case ".case":
 
@@ -871,11 +935,12 @@ Include:
 - Model answers
 - Clinical reasoning
 `;
+
             break;
 
-        /* =========================
+        /* =================================================
            TRANSLATION
-        ========================= */
+        ================================================= */
 
         case ".translate":
 
@@ -891,11 +956,12 @@ Preserve medical terminology where appropriate.
 TEXT:
 ${argument}
 `;
+
             break;
 
-        /* =========================
+        /* =================================================
            SUMMARY
-        ========================= */
+        ================================================= */
 
         case ".summarize":
 
@@ -912,11 +978,12 @@ Use:
 TEXT:
 ${argument}
 `;
+
             break;
 
-        /* =========================
-           UNKNOWN
-        ========================= */
+        /* =================================================
+           UNKNOWN COMMAND
+        ================================================= */
 
         default:
 
@@ -943,78 +1010,36 @@ async function startBot() {
     const {
         state,
         saveCreds
-    } = await useMultiFileAuthState("./auth_info");
+    } = await useMultiFileAuthState(
+        "./auth_info"
+    );
 
     const {
         version
     } = await fetchLatestBaileysVersion();
 
-    const sock = makeWASocket({
+    const sock =
+        makeWASocket({
 
-        version,
+            version,
 
-        auth: state,
+            auth: state,
 
-        logger,
+            logger,
 
-        printQRInTerminal: false,
+            printQRInTerminal: false,
 
-        browser: [
-            "Ally Scott",
-            "Chrome",
-            "1.0.0"
-        ],
+            browser: [
+                "Ally Scott",
+                "Chrome",
+                "1.0.0"
+            ],
 
-        generateHighQualityLinkPreview: true
-    });
-
-    /* =====================================================
-       PAIRING CODE
-    ===================================================== */
-
-    if (!state.creds.registered) {
-
-        try {
-
-            const cleanNumber =
-                PHONE_NUMBER.replace(/\D/g, "");
-
-            console.log("");
-            console.log("======================================");
-            console.log("       🤖 ALLY SCOTT BOT");
-            console.log("======================================");
-            console.log("Requesting WhatsApp pairing code...");
-            console.log("");
-
-            const pairingCode =
-                await sock.requestPairingCode(
-                    cleanNumber
-                );
-
-            console.log("======================================");
-            console.log("       🔐 PAIRING CODE");
-            console.log("======================================");
-            console.log(pairingCode);
-            console.log("======================================");
-            console.log("");
-
-            console.log(
-                "WhatsApp > Linked Devices > Link a device > Link with phone number instead"
-            );
-
-            console.log("");
-
-        } catch (error) {
-
-            console.error(
-                "❌ Pairing code error:",
-                error.message
-            );
-        }
-    }
+            generateHighQualityLinkPreview: true
+        });
 
     /* =====================================================
-       SAVE SESSION
+       SAVE CREDENTIALS
     ===================================================== */
 
     sock.ev.on(
@@ -1035,40 +1060,82 @@ async function startBot() {
                 lastDisconnect
             } = update;
 
+            /* =============================================
+               CONNECTION OPEN
+            ============================================= */
+
             if (connection === "open") {
 
+                reconnecting = false;
+
                 console.log("");
-                console.log("======================================");
-                console.log("🤖 ALLY SCOTT IS ONLINE");
-                console.log("🟢 WhatsApp Connected");
-                console.log("🧠 OpenAI Enabled");
-                console.log("======================================");
+                console.log(
+                    "======================================"
+                );
+                console.log(
+                    "🤖 ALLY SCOTT IS ONLINE"
+                );
+                console.log(
+                    "🟢 WhatsApp Connected"
+                );
+                console.log(
+                    "🧠 OpenAI Enabled"
+                );
+                console.log(
+                    "======================================"
+                );
                 console.log("");
             }
+
+            /* =============================================
+               CONNECTION CLOSED
+            ============================================= */
 
             if (connection === "close") {
 
                 const statusCode =
-                    lastDisconnect?.error?.output?.statusCode;
+                    lastDisconnect
+                        ?.error
+                        ?.output
+                        ?.statusCode;
 
                 console.log(
                     "WhatsApp connection closed:",
                     statusCode
                 );
 
-                const shouldReconnect =
-                    statusCode !==
-                    DisconnectReason.loggedOut;
+                /* -----------------------------------------
+                   LOGGED OUT / 401
+                ----------------------------------------- */
 
                 if (
-                    shouldReconnect &&
-                    !reconnecting
+                    statusCode === 401 ||
+                    statusCode ===
+                    DisconnectReason.loggedOut
                 ) {
+
+                    console.log("");
+                    console.log(
+                        "❌ WhatsApp session logged out."
+                    );
+                    console.log(
+                        "Delete auth_info and pair again."
+                    );
+                    console.log("");
+
+                    return;
+                }
+
+                /* -----------------------------------------
+                   OTHER CONNECTION ERRORS
+                ----------------------------------------- */
+
+                if (!reconnecting) {
 
                     reconnecting = true;
 
                     console.log(
-                        "🔄 Reconnecting..."
+                        "🔄 Reconnecting in 5 seconds..."
                     );
 
                     setTimeout(
@@ -1076,25 +1143,111 @@ async function startBot() {
 
                             reconnecting = false;
 
-                            await startBot();
+                            try {
+
+                                await startBot();
+
+                            } catch (error) {
+
+                                console.error(
+                                    "❌ Reconnection error:",
+                                    error.message
+                                );
+                            }
 
                         },
                         5000
-                    );
-
-                } else {
-
-                    console.log(
-                        "❌ WhatsApp logged out."
-                    );
-
-                    console.log(
-                        "Pair the device again."
                     );
                 }
             }
         }
     );
+
+    /* =====================================================
+       PAIRING CODE
+    ===================================================== */
+
+    if (
+        !state.creds.registered &&
+        !pairingRequested
+    ) {
+
+        pairingRequested = true;
+
+        try {
+
+            const cleanNumber =
+                PHONE_NUMBER.replace(
+                    /\D/g,
+                    ""
+                );
+
+            console.log("");
+            console.log(
+                "======================================"
+            );
+            console.log(
+                "       🤖 ALLY SCOTT BOT"
+            );
+            console.log(
+                "======================================"
+            );
+            console.log(
+                "Preparing WhatsApp pairing..."
+            );
+            console.log("");
+
+            /*
+             * Wait for the WhatsApp socket to initialize.
+             */
+
+            await new Promise(
+                resolve =>
+                    setTimeout(
+                        resolve,
+                        3000
+                    )
+            );
+
+            const pairingCode =
+                await sock.requestPairingCode(
+                    cleanNumber
+                );
+
+            console.log("");
+            console.log(
+                "======================================"
+            );
+            console.log(
+                "       🔐 PAIRING CODE"
+            );
+            console.log(
+                "======================================"
+            );
+            console.log(
+                pairingCode
+            );
+            console.log(
+                "======================================"
+            );
+            console.log("");
+
+            console.log(
+                "WhatsApp > Linked Devices > Link a device > Link with phone number instead"
+            );
+
+            console.log("");
+
+        } catch (error) {
+
+            console.error(
+                "❌ Pairing code error:",
+                error.message
+            );
+
+            pairingRequested = false;
+        }
+    }
 
     /* =====================================================
        MESSAGE HANDLER
@@ -1107,18 +1260,20 @@ async function startBot() {
             try {
 
                 const message =
-                    messages[0];
+                    messages?.[0];
 
                 if (!message?.message) {
                     return;
                 }
 
-                if (message.key.fromMe) {
+                /* Ignore own messages */
+
+                if (message.key?.fromMe) {
                     return;
                 }
 
                 const jid =
-                    message.key.remoteJid;
+                    message.key?.remoteJid;
 
                 if (!jid) {
                     return;
@@ -1129,6 +1284,10 @@ async function startBot() {
 
                 let text = "";
 
+                /* =========================================
+                   NORMAL TEXT
+                ========================================= */
+
                 if (
                     content.conversation
                 ) {
@@ -1136,26 +1295,56 @@ async function startBot() {
                     text =
                         content.conversation;
 
-                } else if (
-                    content.extendedTextMessage?.text
+                }
+
+                /* =========================================
+                   EXTENDED TEXT
+                ========================================= */
+
+                else if (
+                    content
+                        .extendedTextMessage
+                        ?.text
                 ) {
 
                     text =
-                        content.extendedTextMessage.text;
+                        content
+                            .extendedTextMessage
+                            .text;
 
-                } else if (
-                    content.imageMessage?.caption
+                }
+
+                /* =========================================
+                   IMAGE CAPTION
+                ========================================= */
+
+                else if (
+                    content
+                        .imageMessage
+                        ?.caption
                 ) {
 
                     text =
-                        content.imageMessage.caption;
+                        content
+                            .imageMessage
+                            .caption;
 
-                } else if (
-                    content.videoMessage?.caption
+                }
+
+                /* =========================================
+                   VIDEO CAPTION
+                ========================================= */
+
+                else if (
+                    content
+                        .videoMessage
+                        ?.caption
                 ) {
 
                     text =
-                        content.videoMessage.caption;
+                        content
+                            .videoMessage
+                            .caption;
                 }
 
                 text =
@@ -1178,7 +1367,9 @@ async function startBot() {
                 ) {
 
                     const reply =
-                        await handleCommand(text);
+                        await handleCommand(
+                            text
+                        );
 
                     if (reply) {
 
@@ -1210,7 +1401,7 @@ provide the complete clinical case structure:
 
 1. Provisional Diagnosis
 2. Differential Diagnosis
-3. Investigations
+3. Investigations with reasons
 4. Treatment / Management
 5. Prevention
 6. Follow-up
@@ -1218,7 +1409,8 @@ provide the complete clinical case structure:
 8. Complications
 9. Exam / Clinical Pearls
 
-If it is a general medical question, answer appropriately.
+If it is a general medical question,
+answer appropriately.
 `);
 
                 await sock.sendMessage(
